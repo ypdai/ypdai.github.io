@@ -144,6 +144,302 @@
           <div id="js-content" class="content-ll">
             
   
+    <article id="post-cephfs性能优化之file layouts" class="article article-type-post  article-index" itemscope itemprop="blogPost">
+  <div class="article-inner">
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="article-title" href="/2021/02/24/cephfs性能优化之file layouts/">使用file layouts来提升cephfs的读性能</a>
+    </h1>
+  
+
+        
+        <a href="/2021/02/24/cephfs性能优化之file layouts/" class="archive-article-date">
+  	<time datetime="2021-02-24T11:52:11.173Z" itemprop="datePublished"><i class="icon-calendar icon"></i>2021-02-24</time>
+</a>
+        
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>这里想介绍下，如何使用cephfs的FILE LAYOUTS功能来提升cephfs的读性能。</p>
+<p>我们都知道ceph客户端在读数据的时候，ceph客户端通过crush算法算出自己所需的数据在哪个osd上，然后直接和这个osd通讯来获取数据。我们就利用这个很cool特性再结合cephfs的FILE LAYOUTS功能来提升集群的读性能。</p>
+<p>总体思路就是让每个内核客户端（以下简称KC）的主本数据放在自己所在节点的osd上，这样读的时候就直接和本机上的osd通信读取数据，就不用跑到其他节点上去读取数据，从而避免在和其他节点通讯时的网络消耗。</p>
+<p>注意FILE LAYOUTS这种方式有几个限制：</p>
+<ul>
+<li>KC需要挂载到集群的节点上</li>
+<li>不能在多个KC上同时对同一个目录配置不同的FILE LAYOUTS（如果要实现需要自己改代码）</li>
+</ul>
+<p>好了，下面就开始动手操作了。</p>
+<h2 id="环境介绍"><a href="#环境介绍" class="headerlink" title="环境介绍"></a>环境介绍</h2><p>下面把实验环境的操作系统版本及其内核版本、ceph的版本、以及搭建的ceph测试集群环境给出来，以供参考。如果你的环境和我下面给出的环境不一致也没关系。只要对比你环境在配置之前和配置之后的性能数据就可以了。</p>
+<h3 id="操作系统版本"><a href="#操作系统版本" class="headerlink" title="操作系统版本"></a>操作系统版本</h3><pre><code>[root@ceph01 ~]# cat /etc/redhat-release 
+CentOS Linux release 7.5.1804 (Core) 
+</code></pre><h3 id="操作系统内核版本"><a href="#操作系统内核版本" class="headerlink" title="操作系统内核版本"></a>操作系统内核版本</h3><pre><code>[root@ceph01 ~]# uname -a
+Linux ceph01 4.17.3-1.el7.elrepo.x86_64 #1 SMP Tue Jun 26 10:14:25 EDT 2018 x86_64 x86_64 x86_64 GNU/Linux
+</code></pre><h3 id="ceph版本"><a href="#ceph版本" class="headerlink" title="ceph版本"></a>ceph版本</h3><pre><code>[root@ceph01 ~]# ceph -v
+ceph version 10.2.10 (5dc1e4c05cb68dbf62ae6fce3f0700e4654fdbbe)
+</code></pre><h3 id="测试集群初始环境"><a href="#测试集群初始环境" class="headerlink" title="测试集群初始环境"></a>测试集群初始环境</h3><p>我们用ceph01、ceph02这两个节点（虚拟机）快速搭建一个单mon，单mds和4个osd的测试集群，用作下面的测试。</p>
+<p>集群整体情况如下：</p>
+<pre><code>[root@ceph01 ~]# ceph -s
+    cluster caf6dbda-86e7-4c4c-b8f7-a9a12d0a39b0
+     health HEALTH_OK
+     monmap e5: 1 mons at {ceph01=192.168.10.20:6789/0}
+            election epoch 24, quorum 0 ceph01
+      fsmap e69: 1/1/1 up {0=ceph01=up:active}
+     osdmap e438: 4 osds: 4 up, 4 in
+            flags sortbitwise,require_jewel_osds
+      pgmap v167598: 256 pgs, 3 pools, 3618 MB data, 916 objects
+            7529 MB used, 84563 MB / 92093 MB avail
+                 256 active+clean
+
+[root@ceph01 ~]# ceph osd tree
+ID WEIGHT  TYPE NAME        UP/DOWN REWEIGHT PRIMARY-AFFINITY 
+-1 0.05799 root default                                       
+-2 0.02899     host ceph01                                    
+ 0 0.01500         osd.0         up  1.00000          1.00000 
+ 1 0.01500         osd.1         up  1.00000          1.00000 
+-3 0.02899     host ceph02                                    
+ 2 0.01500         osd.2         up  1.00000          1.00000 
+ 3 0.01500         osd.3         up  1.00000          1.00000     
+</code></pre><p>创建metadata和data池，然后创建名称叫做cephfs的ceph文件系统</p>
+<pre><code>[root@ceph01 ~]# ceph fs ls
+name: cephfs, metadata pool: metadata, data pools: [data ]
+</code></pre><p>然后在ceph01挂载cephfs的内核客户端，然后在集群目录里面创建一个testdir测试目录</p>
+<pre><code>[root@ceph01 ~]# mkdir /mycephfs
+[root@ceph01 ~]# mount -t ceph 192.168.10.20:/ /mycephfs/
+[root@ceph01 ~]# mkdir /mycephfs/testdir/
+</code></pre><p>ok，初始的环境我们准备好了，下面开始配置。</p>
+<h2 id="获取基准性能数据"><a href="#获取基准性能数据" class="headerlink" title="获取基准性能数据"></a>获取基准性能数据</h2><p>因为我们要看配置FILE LAYOUTS之前和配置FILE LAYOUTS之后的效果，所以在配置之前，需要先获取当前环境的性能，你根据你的实际情况来获取，你可能是通过CIFS、NFS或其他方式将cephfs给到客户端的，比如如果是CIFS，那就是在CIFS客户端用IO测试工具获取一组读数据，记录下来，之后配置好FILE LAYOUTS，再用相同的方式获取一组读数据，就可以对比了。</p>
+<h2 id="配置和测试过程"><a href="#配置和测试过程" class="headerlink" title="配置和测试过程"></a>配置和测试过程</h2><p>因为我们等下需要用到setfattr和getfattr命令，所以如果你的环境里面没有这两个命令的话，使用下面的命令安装下就好了：</p>
+<pre><code>[root@ceph01 ~]# yum install -y attr
+</code></pre><h3 id="配置crushmap"><a href="#配置crushmap" class="headerlink" title="配置crushmap"></a>配置crushmap</h3><p>获取当前的crushmap如下：</p>
+<pre><code># begin crush map
+tunable choose_local_tries 0
+tunable choose_local_fallback_tries 0
+tunable choose_total_tries 50
+tunable chooseleaf_descend_once 1
+tunable chooseleaf_vary_r 1
+tunable straw_calc_version 1
+
+# devices
+device 0 osd.0
+device 1 osd.1
+device 2 osd.2
+device 3 osd.3
+
+# types
+type 0 osd
+type 1 host
+type 2 chassis
+type 3 rack
+type 4 row
+type 5 pdu
+type 6 pod
+type 7 room
+type 8 datacenter
+type 9 region
+type 10 root
+
+# buckets
+host ceph01 {
+    id -2        # do not change unnecessarily
+    # weight 0.029
+    alg straw
+    hash 0    # rjenkins1
+    item osd.0 weight 0.015
+    item osd.1 weight 0.015
+}
+host ceph02 {
+    id -3        # do not change unnecessarily
+    # weight 0.029
+    alg straw
+    hash 0    # rjenkins1
+    item osd.2 weight 0.015
+    item osd.3 weight 0.015
+}
+root default {
+    id -1        # do not change unnecessarily
+    # weight 0.058
+    alg straw
+    hash 0    # rjenkins1
+    item ceph01 weight 0.029
+    item ceph02 weight 0.029
+}
+
+# rules
+rule replicated_ruleset {
+    ruleset 0
+    type replicated
+    min_size 1
+    max_size 10
+    step take default
+    step chooseleaf firstn 0 type host
+    step emit
+}
+# end crush map
+</code></pre><p>修改之后的crushmap如下：</p>
+<pre><code># begin crush map
+tunable choose_local_tries 0
+tunable choose_local_fallback_tries 0
+tunable choose_total_tries 50
+tunable chooseleaf_descend_once 1
+tunable chooseleaf_vary_r 1
+tunable straw_calc_version 1
+
+# devices
+device 0 osd.0
+device 1 osd.1
+device 2 osd.2
+device 3 osd.3
+
+# types
+type 0 osd
+type 1 host
+type 2 chassis
+type 3 rack
+type 4 row
+type 5 pdu
+type 6 pod
+type 7 room
+type 8 datacenter
+type 9 region
+type 10 root
+
+# buckets
+host ceph01 {
+    id -2        # do not change unnecessarily
+    # weight 0.029
+    alg straw
+    hash 0    # rjenkins1
+    item osd.0 weight 0.015
+    item osd.1 weight 0.015
+}
+host ceph02 {
+    id -3        # do not change unnecessarily
+    # weight 0.029
+    alg straw
+    hash 0    # rjenkins1
+    item osd.2 weight 0.015
+    item osd.3 weight 0.015
+}
+root default {
+    id -1        # do not change unnecessarily
+    # weight 0.058
+    alg straw
+    hash 0    # rjenkins1
+    item ceph01 weight 0.029
+    item ceph02 weight 0.029
+    item ceph03 weight 0.029
+}
+
+root root_ceph01 {
+    id -5        # do not change unnecessarily
+    # weight 0.029
+    alg straw
+    hash 0    # rjenkins1
+    item ceph01 weight 0.029
+}
+root root_ceph02 {
+    id -6        # do not change unnecessarily
+    # weight 0.029
+    alg straw
+    hash 0    # rjenkins1
+    item ceph02 weight 0.029
+}
+
+# rules
+rule replicated_ruleset {
+    ruleset 0
+    type replicated
+    min_size 1
+    max_size 10
+    step take default
+    step chooseleaf firstn 0 type host
+    step emit
+}
+rule main_is_ceph01 {
+    ruleset 1
+    type replicated
+    min_size 1
+    max_size 10
+    step take root_ceph01
+    step chooseleaf firstn 1 type host
+    step emit
+    step take root_ceph02
+    step chooseleaf firstn -1 type host
+    step emit
+}
+# end crush map
+</code></pre><h4 id="配置存储池"><a href="#配置存储池" class="headerlink" title="配置存储池"></a>配置存储池</h4><p>创建1个池</p>
+<pre><code>[root@ceph01 ~]# ceph osd pool create mainisceph01 64 64
+ # 设置主本全部放在ceph01这个节点上
+[root@ceph01 ~]# ceph osd pool set mainisceph01 crush_ruleset 1
+</code></pre><h4 id="将池加入到cephfs的数据池集合"><a href="#将池加入到cephfs的数据池集合" class="headerlink" title="将池加入到cephfs的数据池集合"></a>将池加入到cephfs的数据池集合</h4><pre><code>[root@ceph01 ~]# ceph fs add_data_pool cephfs mainisceph01
+[root@ceph01 ~]# ceph fs ls
+name: cephfs, metadata pool: metadata, data pools: [data mainisceph01]
+</code></pre><h4 id="配置FILE-LAYOUTS"><a href="#配置FILE-LAYOUTS" class="headerlink" title="配置FILE LAYOUTS"></a>配置FILE LAYOUTS</h4><p>在ceph01节点上执行</p>
+<pre><code>[root@ceph01 ~]# setfattr -n ceph.dir.layout.pool -v mainisceph01 /mycephfs/cifs
+</code></pre><p>好了，这就配置好了，可以使用ceph osd map命令试试看对象的映射分布情况</p>
+<pre><code>[root@ceph01 ~]# for i in `seq 1 100`;do ceph osd map mainisceph01 obj$i;done
+osdmap e472 pool &apos;mainisceph01&apos; (17) object &apos;obj1&apos; -&gt; pg 17.6cf8deff (17.3f) -&gt; up ([0,3], p0) acting ([0,3], p0)
+osdmap e472 pool &apos;mainisceph01&apos; (17) object &apos;obj2&apos; -&gt; pg 17.3f1ee208 (17.8) -&gt; up ([0,2], p0) acting ([0,2], p0)
+osdmap e472 pool &apos;mainisceph01&apos; (17) object &apos;obj3&apos; -&gt; pg 17.61f68bb1 (17.31) -&gt; up ([0,2], p0) acting ([0,2], p0)
+osdmap e472 pool &apos;mainisceph01&apos; (17) object &apos;obj4&apos; -&gt; pg 17.a8759770 (17.30) -&gt; up ([0,3], p0) acting ([0,3], p0)
+osdmap e472 pool &apos;mainisceph01&apos; (17) object &apos;obj5&apos; -&gt; pg 17.666934a3 (17.23) -&gt; up ([0,2], p0) acting ([0,2], p0)
+···
+</code></pre><p>可以看到对象主本都是在osd.0上，osd.0是在ceph01上，这样读取数据的时候就不用去其他节点读取数据了，也就减少了数据在网络中的传输时间，从而提升读性能。</p>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>最后我们把主要步骤整理下：</p>
+<ol>
+<li>修改crushmap，控制池里面对象的主副本分布；</li>
+<li>创建存储池并设置对应的rule；</li>
+<li>将存储池加入到cephfs的data池集合；</li>
+<li>KC上面对需要配置FILE LAYOUTS的目录设置对应的pool；</li>
+</ol>
+<p>前面也提到了，这种配置方式有一些限制，比如不能在多个KC上同时对同一个目录配置不同的pool（如果要实现需要自己改代码）。这里只是提供一种思路。实际测试读性能大概会提升40%左右。</p>
+
+      
+
+      
+    </div>
+    <div class="article-info article-info-index">
+      
+      
+      
+
+      
+        <p class="article-more-link">
+          <a class="article-more-a" href="/2021/02/24/cephfs性能优化之file layouts/">展开全文 >></a>
+        </p>
+      
+
+      
+      <div class="clearfix"></div>
+    </div>
+  </div>
+</article>
+
+<aside class="wrap-side-operation">
+    <div class="mod-side-operation">
+        
+        <div class="jump-container" id="js-jump-container" style="display:none;">
+            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
+                <i class="icon-font icon-back"></i>
+            </a>
+            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
+                <i class="icon-font icon-plane jump-plane"></i>
+            </div>
+        </div>
+        
+        
+    </div>
+</aside>
+
+
+
+
+  
     <article id="post-cephadm工具使用" class="article article-type-post  article-index" itemscope itemprop="blogPost">
   <div class="article-inner">
     

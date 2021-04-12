@@ -144,6 +144,164 @@
           <div id="js-content" class="content-ll">
             
   
+    <article id="post-集群osd full错误处理" class="article article-type-post  article-index" itemscope itemprop="blogPost">
+  <div class="article-inner">
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="article-title" href="/2021/02/24/集群osd full错误处理/">集群osd full错误处理</a>
+    </h1>
+  
+
+        
+        <a href="/2021/02/24/集群osd full错误处理/" class="archive-article-date">
+  	<time datetime="2021-02-24T11:52:14.381Z" itemprop="datePublished"><i class="icon-calendar icon"></i>2021-02-24</time>
+</a>
+        
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h3 id="一、前言"><a href="#一、前言" class="headerlink" title="一、前言"></a>一、前言</h3><p>之前也处理过集群出现osd full时的问题，但是没有整理出来，今天又处理了这种问题，所以就整理记录下来。</p>
+<h3 id="二、环境准备"><a href="#二、环境准备" class="headerlink" title="二、环境准备"></a>二、环境准备</h3><p>首先准备一个正常的集群。</p>
+<pre><code>[root@ceph01 ~]# ceph -s
+    cluster caf6dbda-86e7-4c4c-b8f7-a9a12d0a39b0
+     health HEALTH_OK
+     monmap e5: 1 mons at {ceph01=192.168.10.20:6789/0}
+            election epoch 15, quorum 0 ceph01
+      fsmap e12: 1/1/1 up {0=ceph01=up:active}
+     osdmap e262: 6 osds: 6 up, 6 in
+            flags sortbitwise,require_jewel_osds
+      pgmap v57886: 344 pgs, 14 pools, 11636 MB data, 3115 objects
+            23548 MB used, 68545 MB / 92093 MB avail
+                 344 active+clean
+</code></pre><h3 id="三、开始实验"><a href="#三、开始实验" class="headerlink" title="三、开始实验"></a>三、开始实验</h3><p>为了方便测试，首先将集群的nearfull和full设置低一些，这样就可以少写入点测试数据，使集群快速的能达到full的状态。</p>
+<pre><code>[root@ceph01 ~]# ceph pg set_nearfull_ratio 0.2
+[root@ceph01 ~]# ceph pg set_full_ratio 0.3
+</code></pre><p>这里将osd的nearfull设置为0.2，full设置为0.3。开始往集群写入测试数据</p>
+<pre><code>[root@ceph01 ~]# bench -p rbd 1000 write --no-cleanup
+</code></pre><p>写入过程中，另开一个窗口，观察集群状态</p>
+<pre><code>[root@ceph01 ~]# ceph -s
+    cluster caf6dbda-86e7-4c4c-b8f7-a9a12d0a39b0
+         health HEALTH_WARN
+                1 near full osd(s)
+         monmap e5: 1 mons at {ceph01=192.168.10.20:6789/0}
+                election epoch 15, quorum 0 ceph01
+          fsmap e12: 1/1/1 up {0=ceph01=up:active}
+         osdmap e227: 6 osds: 6 up, 6 in
+                flags nearfull,sortbitwise,require_jewel_osds
+          pgmap v56958: 344 pgs, 14 pools, 7332 MB data, 2039 objects
+                15512 MB used, 76581 MB / 92093 MB avail
+                     344 active+clean
+      client io 42989 kB/s wr, 0 op/s rd, 10 op/s wr
+</code></pre><p>可以看到，写入一段时间之后，集群出现near full告警，但是客户端可以继续写入，继续观察集群状态</p>
+<pre><code>[root@ceph01 ~]# ceph -s
+    cluster caf6dbda-86e7-4c4c-b8f7-a9a12d0a39b0
+     health HEALTH_ERR
+            6 full osd(s)
+            full flag(s) set
+     monmap e5: 1 mons at {ceph01=192.168.10.20:6789/0}
+            election epoch 15, quorum 0 ceph01
+      fsmap e12: 1/1/1 up {0=ceph01=up:active}
+     osdmap e225: 6 osds: 6 up, 6 in
+            flags full,sortbitwise,require_jewel_osds
+      pgmap v56765: 344 pgs, 14 pools, 21672 MB data, 5626 objects
+            43616 MB used, 48477 MB / 92093 MB avail
+                 344 active+clean
+</code></pre><p>可以看到集群状态变成err了，提示6 full osd(s)，此时rados bench写入被挂起</p>
+<pre><code>2018-07-27 14:15:29.408205 7f257d824a40  0 client.78915.objecter  FULL, paused modify 0x55a5acae1900 tid 0
+2018-07-27 14:15:29.468281 7f257d824a40  0 client.78915.objecter  FULL, paused modify 0x55a5acb084a0 tid 0
+  309      16      2056      2040   25.3392         3     6.43313     2.48428
+2018-07-27 14:15:29.945256 7f257d824a40  0 client.78915.objecter  FULL, paused modify 0x55a5acaf3880 tid 0
+2018-07-27 14:15:29.946301 7f257d824a40  0 client.78915.objecter  FULL, paused modify 0x55a5acaf20a0 tid 0
+2018-07-27 14:15:29.946332 7f257d824a40  0 client.78915.objecter  FULL, paused modify 0x55a5acaefa30 tid 0
+2018-07-27 14:15:30.033664 7f257d824a40  0 client.78915.objecter  FULL, paused modify 0x55a5acaea8e0 tid 0
+2018-07-27 14:15:30.037818 7f257d824a40  0 client.78915.objecter  FULL, paused modify 0x55a5acaf0620 tid 0
+  310      16      2061      2045   25.3226        20     6.73312     2.49643
+2018-07-27 14:15:31.248976 7f257d824a40  0 client.78915.objecter  FULL, paused modify 0x55a5acb00240 tid 0
+2018-07-27 14:15:31.396116 7f257d824a40  0 client.78915.objecter  FULL, paused modify 0x55a5acae6410 tid 0
+  311      16      2063      2047   25.2691         8     8.38232     2.50219
+2018-07-27 14:15:31.718398 7f257d824a40  0 client.78915.objecter  FULL, paused modify 0x55a5acaf14b0 tid 0
+  312      16      2064      2048   25.2036         4     9.97337     2.50583
+</code></pre><p>我们来看下详细的错误信息</p>
+<pre><code>[root@ceph01 ~]# ceph health detail
+HEALTH_ERR 1 full osd(s); 5 near full osd(s); full flag(s) set
+osd.2 is full at 30%
+osd.0 is near full at 23%
+osd.1 is near full at 22%
+osd.3 is near full at 21%
+osd.4 is near full at 25%
+osd.5 is near full at 28%
+full flag(s) set
+</code></pre><p>可以看到osd.2的使用量达到了30%（我们设置的full ratio就是0.3），此时集群状态err，客户端不能读写了。</p>
+<p>使用rados rm来删除对象也不行，会报错</p>
+<pre><code>[root@ceph01 ~]# rados -p rbd rm benchmark_data_ceph01_112826_object350
+2018-07-27 14:20:07.302692 7f6fb3e3aa40  0 client.79057.objecter  FULL, paused modify 0x5621bfa279d0 tid 0
+</code></pre><p>这里可以理解为，集群出现full告警之后，客户端不能读写集群数据了。</p>
+<h3 id="三、总结"><a href="#三、总结" class="headerlink" title="三、总结"></a>三、总结</h3><p>集群某个osd盘使用量达到集群的full ratio时集群将不可读写。</p>
+<p>osd盘满大概可以分为两种情况：</p>
+<ol>
+<li>由于pg规划的不合理，导致一两个osd盘满了，其他osd空间还很富余；<blockquote>
+<p>这种情况可以通过调整盘满的osd的权重，ceph osd reweight OSDID xxx<br> 然后等待数据迁移完成之后，增加合理pg数，最后等待数据均衡</p>
+</blockquote>
+</li>
+</ol>
+<ol>
+<li>整体osd盘都快满了；<blockquote>
+<p>这种情况通过增加osd来解决，获取删除一些数据之后，再扩容。<br> 想办法让集群恢复到可读写状态，然后来删除一些数据，从而释放集群空间。恢复的方式：</p>
+<ul>
+<li>调高full ratio：<code>$ ceph pg set_nearfull_ratio 0.85</code>和<code>$ ceph pg set_full_ratio 0.95</code></li>
+<li>通过tune2fs命令释放磁盘空间：<code>$ tune2fs -m 1 /dev/sdc1</code></li>
+<li>删除数据目录无用文件</li>
+</ul>
+</blockquote>
+</li>
+</ol>
+<p>也可以预先在osd的数据目录下放置一个20G左右的文件，如果万一出现osd盘满的情况，通过rm这个文件来释放空间。为了防止出现集群被写满，要有完善的集群监控机制，在集群快写满时，能及时地处理。</p>
+
+      
+
+      
+    </div>
+    <div class="article-info article-info-index">
+      
+      
+      
+
+      
+        <p class="article-more-link">
+          <a class="article-more-a" href="/2021/02/24/集群osd full错误处理/">展开全文 >></a>
+        </p>
+      
+
+      
+      <div class="clearfix"></div>
+    </div>
+  </div>
+</article>
+
+<aside class="wrap-side-operation">
+    <div class="mod-side-operation">
+        
+        <div class="jump-container" id="js-jump-container" style="display:none;">
+            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
+                <i class="icon-font icon-back"></i>
+            </a>
+            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
+                <i class="icon-font icon-plane jump-plane"></i>
+            </div>
+        </div>
+        
+        
+    </div>
+</aside>
+
+
+
+
+  
     <article id="post-关于Docker数据卷的两个问题" class="article article-type-post  article-index" itemscope itemprop="blogPost">
   <div class="article-inner">
     
@@ -2381,187 +2539,6 @@ rgw_lc_debug_interval = -1                这个参数很关键，&gt;0时，会
       
         <p class="article-more-link">
           <a class="article-more-a" href="/2021/02/24/rgw lifecycle功能理解/">展开全文 >></a>
-        </p>
-      
-
-      
-      <div class="clearfix"></div>
-    </div>
-  </div>
-</article>
-
-<aside class="wrap-side-operation">
-    <div class="mod-side-operation">
-        
-        <div class="jump-container" id="js-jump-container" style="display:none;">
-            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
-                <i class="icon-font icon-back"></i>
-            </a>
-            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
-                <i class="icon-font icon-plane jump-plane"></i>
-            </div>
-        </div>
-        
-        
-    </div>
-</aside>
-
-
-
-
-  
-    <article id="post-osd常见故障及处理总结" class="article article-type-post  article-index" itemscope itemprop="blogPost">
-  <div class="article-inner">
-    
-      <header class="article-header">
-        
-  
-    <h1 itemprop="name">
-      <a class="article-title" href="/2021/02/24/osd常见故障及处理总结/">osd常见故障及处理总结</a>
-    </h1>
-  
-
-        
-        <a href="/2021/02/24/osd常见故障及处理总结/" class="archive-article-date">
-  	<time datetime="2021-02-24T11:52:12.851Z" itemprop="datePublished"><i class="icon-calendar icon"></i>2021-02-24</time>
-</a>
-        
-      </header>
-    
-    <div class="article-entry" itemprop="articleBody">
-      
-        <h3 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h3><p>这篇文章主要想将自己平时遇到的或者是别人遇到的一些osd的问题和处理过程做个总结汇总，方便以后快速的查找。（会持续更新）</p>
-<hr>
-<h2 id="osdmap解析失败，导致osd启动失败"><a href="#osdmap解析失败，导致osd启动失败" class="headerlink" title="osdmap解析失败，导致osd启动失败"></a>osdmap解析失败，导致osd启动失败</h2><h4 id="故障现象"><a href="#故障现象" class="headerlink" title="故障现象"></a>故障现象</h4><p>修改osd的调试日志到20，然后启动osd报错，日志如下：</p>
-<pre><code>2019-04-15 18:47:52.985665 7ff10b6c2800 10 osd.66 pg_epoch: 671640 pg[1.462a( v 671616&apos;286461 lc 667530&apos;286361 (66710
-2&apos;283292,671616&apos;286461] local-les=671640 n=3485 ec=28764 les/c/f 671630/671165/0 671632/671634/671634) [66,75]/[66,104] r=0 lpr=671640 pi=665415-671633/18 crt=671616&apos;286461 lcod 0&apos;0 mlcod 0&apos;0 inactive NIBBLEWISE m=33] Not blocking outgoing recovery messages    -4&gt; 2019-04-15 18:47:52.985676 7ff10b6c2800 10 osd.66 671649 load_pgs loaded pg[1.462a( v 671616&apos;286461 lc 667530&apos;286361 
-(667102&apos;283292,671616&apos;286461] local-les=671640 n=3485 ec=28764 les/c/f 671630/671165/0 671632/671634/671634) [66,75]/[66,104] r=0 lpr=671640 pi=665415-671633/18 crt=671616&apos;286461 lcod 0&apos;0 mlcod 0&apos;0 inactive NIBBLEWISE m=33] log((667102&apos;283292,671616&apos;286461], crt=671616&apos;286461)    -3&gt; 2019-04-15 18:47:52.985870 7ff10b6c2800 10 osd.66 671649 pgid 1.6303 coll 1.6303_head
-2019-04-15 18:47:52.985984 7ff10b6c2800 20 osd.66 0 get_map 671651 - loading and decoding 0x7ff0cf3a2080
-2019-04-15 18:47:52.986030 7ff10b6c2800 10 osd.66 0 add_map_bl 671651 0 bytes
-2019-04-15 18:47:52.989844 7ff10b6c2800 -1 *** Caught signal (Aborted) **
- in thread 7ff10b6c2800 thread_name:ceph-osd
-
- ceph version 10.2.0 (3a9fba20ec743699b69bd0181dd6c54dc01c64b9)
- 1: (()+0x8e4fd2) [0x55c3b4a80fd2]
- 2: (()+0xf100) [0x7ff10a069100]
- 3: (gsignal()+0x37) [0x7ff10862c5f7]
- 4: (abort()+0x148) [0x7ff10862dce8]
- 5: (__gnu_cxx::__verbose_terminate_handler()+0x165) [0x7ff108f309d5]
- 6: (()+0x5e946) [0x7ff108f2e946]
- 7: (()+0x5e973) [0x7ff108f2e973]
- 8: (()+0x5eb93) [0x7ff108f2eb93]
- 9: (()+0x9e8d85) [0x55c3b4b84d85]
- 10: (OSDMap::decode(ceph::buffer::list::iterator&amp;)+0x6d) [0x55c3b4b3aefd]
- 11: (OSDMap::decode(ceph::buffer::list&amp;)+0x1e) [0x55c3b4b3c1de]
- 12: (OSDService::try_get_map(unsigned int)+0x45b) [0x55c3b45273ab]
- 13: (OSD::load_pgs()+0x12bc) [0x55c3b452b33c]
- 14: (OSD::init()+0x1f74) [0x55c3b453d0c4]
- 15: (main()+0x29d1) [0x55c3b44a4bf1]
- 16: (__libc_start_main()+0xf5) [0x7ff108618b15]
-</code></pre><h4 id="故障分析"><a href="#故障分析" class="headerlink" title="故障分析"></a>故障分析</h4><p>日志里面看到osd在解析osdmap 671651这个epoch的时候报错。</p>
-<h4 id="解决办法"><a href="#解决办法" class="headerlink" title="解决办法"></a>解决办法</h4><p>到这个osd的数据目录下find找下这个epoch的osdmap所在目录:</p>
-<pre><code>[root@host10 osd]# find ceph-66/* -name &quot;*671652*&quot;
-ceph-66/current/meta/DIR_4/DIR_1/DIR_E/osdmap.671652__0_C85F4E14__none
-ceph-66/current/meta/DIR_B/DIR_4/DIR_1/inc\uosdmap.671652__0_10EC614B__none
-</code></pre><p>然后到其他正常的osd的数据目录下找到这个epoch的osdmap：</p>
-<pre><code>[root@host10 osd]# find ceph-26/* -name &quot;*671652*&quot;
-ceph-26/current/meta/DIR_4/DIR_1/DIR_E/osdmap.671652__0_C85F4E14__none
-ceph-26/current/meta/DIR_B/DIR_4/DIR_1/inc\uosdmap.671652__0_10EC614B__none
-</code></pre><p>最后cp正常的osd的osdmap去覆盖出问题的osd的osdmap，然后启动可以正常启动osd了。</p>
-<hr>
-<h2 id="osdmap内存占用过大，导致osd进程起不来"><a href="#osdmap内存占用过大，导致osd进程起不来" class="headerlink" title="osdmap内存占用过大，导致osd进程起不来"></a>osdmap内存占用过大，导致osd进程起不来</h2><h4 id="故障现象-1"><a href="#故障现象-1" class="headerlink" title="故障现象"></a>故障现象</h4><p>osd进程启动不成功，<code>dmesg</code>可以看到类似下面的输出：</p>
-<pre><code>Jan  5 16:01:28 ceph02 kernel: [171428.546446] Out of memory: Kill process 6712 (ceph-osd) score 36 or sacrifice child
-Jan  5 16:01:28 ceph02 kernel: [171428.546669] Killed process 6712 (ceph-osd) total-vm:1700052kB, anon-rss:822856kB, file-rss:14048k
-</code></pre><h4 id="故障分析-1"><a href="#故障分析-1" class="headerlink" title="故障分析"></a>故障分析</h4><p>当时的操作是将一个down机很久的机器启动，但是该主机上的osd节点epoch和当前epoch相差2w左右，导致osdmap过多而占用内存过大，从而被OS杀掉。</p>
-<h4 id="解决办法-1"><a href="#解决办法-1" class="headerlink" title="解决办法"></a>解决办法</h4><p>1.设置如下参数，降低内存中osdmap的数量</p>
-<pre><code>osd_map_cache_size = 20
-osd_map_max_advance = 10
-osd_mon_report_interval_min = 10
-osd_pg_stat_report_interval_max = 10
-paxos_service_trim_min = 10
-mon_min_osdmap_epochs = 20
-</code></pre><p>2.找到相关的<a href="http://tracker.ceph.com/issues/13990" target="_blank" rel="noopener">issue</a> ，将这个问题提供的patch集成到自己的版本，编译，打包。</p>
-<hr>
-<h2 id="osdmap不存在，导致osd启动失败"><a href="#osdmap不存在，导致osd启动失败" class="headerlink" title="osdmap不存在，导致osd启动失败"></a>osdmap不存在，导致osd启动失败</h2><h4 id="故障现象-2"><a href="#故障现象-2" class="headerlink" title="故障现象"></a>故障现象</h4><p>osd启动失败，查看osd日志，有以下关键信息：</p>
-<pre><code>7f3a77ce2800  0 osd.256 23801 crush map has features 2268850290688, adjusting msgr requires for clients
-7f3a77ce2800  0 osd.256 23801 crush map has features 2543728197632 was 8705, adjusting msgr requires for mons
-7f3a77ce2800  0 osd.256 23801 crush map has features 20135914242048, adjusting msgr requires for osds
-7f3a77ce2800  0 osd.256 23801 load_pgs
-7f3a77ce2800 -1 osd.256 23801 load_pgs: have pgid 0.18 at epoch 27601, but missing map.  Crashing.
- 0&gt; 2016-08-13 13:35:41.172996 7f3a77ce2800 -1 osd/OSD.cc: In function &apos;void OSD::load_pgs()&apos; thread 7f3a77ce2800 time 2016-08-13 13:35:41.167042
-osd/OSD.cc: 2840: FAILED assert(0 == &quot;Missing map in load_pgs&quot;)
-
- ceph version 6.0.0.s16-94 (762b8d4154bcb91d1bfcabcaf74e756d313596ab)
- 1: (OSD::load_pgs()+0x3616) [0x6749b6]
- 2: (OSD::init()+0x173e) [0x688dbe]
- 3: (main()+0x384f) [0x62f7ef]
- 4: (__libc_start_main()+0xfd) [0x33c901ed1d]
- 5: /usr/bin/ceph-osd() [0x62aef9]
- NOTE: a copy of the executable, or `objdump -rdS &lt;executable&gt;` is needed to interpret this.
-</code></pre><h4 id="故障分析-2"><a href="#故障分析-2" class="headerlink" title="故障分析"></a>故障分析</h4><p>根据堆栈信息可以看出，是在启动osd，加载pg时，读不到相应epoch的osdmap，从而导致osd崩溃。</p>
-<h4 id="解决办法-2"><a href="#解决办法-2" class="headerlink" title="解决办法"></a>解决办法</h4><p>1.看下其他osd节点有没有这个epoch的osdmap，如果有，就从其他节点拷贝到<code>/var/lib/ceph/osd/ceph-$osdid/current/meta</code>下的相关目录。<br>如果没有，可以尝试下面的方法：</p>
-<pre><code>ceph osd getmap $epoch -o /tmp/osdmap.$epoch 
-osdmaptool --print /tmp/osdmap.$epoch
-cp /tmp/osdmap.$epoch /var/lib/ceph/osd/ceph-$osdid/current/meta
-</code></pre><p>然后再启动osd。</p>
-<hr>
-<h2 id="osd-journal读取失败，导致osd启动失败"><a href="#osd-journal读取失败，导致osd启动失败" class="headerlink" title="osd journal读取失败，导致osd启动失败"></a>osd journal读取失败，导致osd启动失败</h2><h4 id="故障现象-3"><a href="#故障现象-3" class="headerlink" title="故障现象"></a>故障现象</h4><p>启动osd报错，日志如下：</p>
-<pre><code>2019-04-16 09:14:11.564612 7f0dd5287800  3 journal journal_replay: r = 0, op_seq now 52521981
-2019-04-16 09:14:11.564642 7f0dd5287800  2 journal read_entry 3229810688 : seq 52521982 1099 bytes
-2019-04-16 09:14:11.564649 7f0dd5287800  3 journal journal_replay: applying op seq 52521982
-2019-04-16 09:14:11.567968 7f0dd5287800  3 journal journal_replay: r = 0, op_seq now 52521982
-2019-04-16 09:14:11.572512 7f0dd5287800  2 journal read_entry 3229814784 : seq 52521983 4196212 bytes
-2019-04-16 09:14:11.572523 7f0dd5287800  3 journal journal_replay: applying op seq 52521983
-2019-04-16 09:14:11.614784 7f0dd5287800  3 journal journal_replay: r = 0, op_seq now 52521983
-2019-04-16 09:14:11.615111 7f0dd5287800  2 journal read_entry 3234017280 : seq 52521984 1099 bytes
-2019-04-16 09:14:11.615119 7f0dd5287800  3 journal journal_replay: applying op seq 52521984
-2019-04-16 09:14:11.619353 7f0dd5287800  3 journal journal_replay: r = 0, op_seq now 52521984
-2019-04-16 09:14:11.619370 7f0dd5287800 -1 journal Unable to read past sequence 52521985 but header indicates the jou
-rnal has committed up through 52522295, journal is corrupt     0&gt; 2019-04-16 09:14:11.622636 7f0dd5287800 -1 os/filestore/FileJournal.cc: In function &apos;bool FileJournal::read_entry(cep
-h::bufferlist&amp;, uint64_t&amp;, bool*)&apos; thread 7f0dd5287800 time 2019-04-16 09:14:11.619375os/filestore/FileJournal.cc: 2031: FAILED assert(0)
-
- ceph version 10.2.0 (3a9fba20ec743699b69bd0181dd6c54dc01c64b9)
- 1: (ceph::__ceph_assert_fail(char const*, char const*, int, char const*)+0x8b) [0x55e3dff0afab]
- 2: (FileJournal::read_entry(ceph::buffer::list&amp;, unsigned long&amp;, bool*)+0x8f1) [0x55e3dfcc5091]
- 3: (JournalingObjectStore::journal_replay(unsigned long)+0x1d5) [0x55e3dfc19f05]
- 4: (FileStore::mount()+0x3bf6) [0x55e3dfbf2346]
- 5: (OSD::init()+0x27d) [0x55e3df8ce3cd]
- 6: (main()+0x29d1) [0x55e3df837bf1]
- 7: (__libc_start_main()+0xf5) [0x7f0dd21ddb15]
-</code></pre><h4 id="故障分析-3"><a href="#故障分析-3" class="headerlink" title="故障分析"></a>故障分析</h4><p>osd日志里面看到因为osd在重放journal的时候无法读取52521985这个序号的journal，导致osd进程退出。</p>
-<h4 id="解决办法-3"><a href="#解决办法-3" class="headerlink" title="解决办法"></a>解决办法</h4><p>把osd的journal_ignore_corruption参数设置为true后，osd启动成功。</p>
-<hr>
-<h2 id="osd启动失败，日志提示object-map-sync-got-1-Operation-not-permitted"><a href="#osd启动失败，日志提示object-map-sync-got-1-Operation-not-permitted" class="headerlink" title="osd启动失败，日志提示object_map sync got (1) Operation not permitted"></a>osd启动失败，日志提示object_map sync got (1) Operation not permitted</h2><h3 id="现象"><a href="#现象" class="headerlink" title="现象"></a>现象</h3><p>使用vdbench工具往cephfs挂载点写入数据过程中，osd down掉，重启osd也启动不了，osd日志：</p>
-<pre><code>2018-11-01 11:01:50.482203 b6867000  5 osd.10 pg_epoch: 975 pg[2.25( v 954&apos;2580 (0&apos;0,954&apos;2580] local-les=959 n=3 ec=66 les/c/f 959/959/0 975/975/714) [9,5,10]/[9,5] r=-1 lpr=0 pi=708-974/40 crt=954&apos;2580 lcod 0&apos;0 inactive NOTIFY NIBBLEWISE] enter Reset
-    -8&gt; 2018-11-01 11:01:50.483487 b6867000  5 osd.10 pg_epoch: 975 pg[0.10b(unlocked)] enter Initial
-    -7&gt; 2018-11-01 11:01:50.520894 b6867000  5 osd.10 pg_epoch: 975 pg[0.10b( v 937&apos;6036 (150&apos;3000,937&apos;6036] local-les=959 n=798 ec=77 les/c/f 959/959/0 975/975/736) [6,10]/[6] r=-1 lpr=0 pi=721-974/19 crt=937&apos;6036 lcod 0&apos;0 inactive NOTIFY NIBBLEWISE] exit Initial 0.037408 0 0.000000
-    -6&gt; 2018-11-01 11:01:50.520972 b6867000  5 osd.10 pg_epoch: 975 pg[0.10b( v 937&apos;6036 (150&apos;3000,937&apos;6036] local-les=959 n=798 ec=77 les/c/f 959/959/0 975/975/736) [6,10]/[6] r=-1 lpr=0 pi=721-974/19 crt=937&apos;6036 lcod 0&apos;0 inactive NOTIFY NIBBLEWISE] enter Reset
-    -5&gt; 2018-11-01 11:01:50.522519 b6867000  5 osd.10 pg_epoch: 975 pg[1.15b(unlocked)] enter Initial
-    -4&gt; 2018-11-01 11:01:50.560698 b6867000  5 osd.10 pg_epoch: 975 pg[1.15b( v 959&apos;27450 (873&apos;24391,959&apos;27450] local-les=959 n=4307 ec=63 les/c/f 959/959/0 975/975/973) [10,1]/[1] r=-1 lpr=0 pi=958-974/8 crt=959&apos;27450 lcod 0&apos;0 inactive NOTIFY NIBBLEWISE] exit Initial 0.038179 0 0.000000
-    -3&gt; 2018-11-01 11:01:50.560773 b6867000  5 osd.10 pg_epoch: 975 pg[1.15b( v 959&apos;27450 (873&apos;24391,959&apos;27450] local-les=959 n=4307 ec=63 les/c/f 959/959/0 975/975/973) [10,1]/[1] r=-1 lpr=0 pi=958-974/8 crt=959&apos;27450 lcod 0&apos;0 inactive NOTIFY NIBBLEWISE] enter Reset
-    -2&gt; 2018-11-01 11:01:50.562743 b6867000  5 osd.10 pg_epoch: 975 pg[2.5d(unlocked)] enter Initial
-    -1&gt; 2018-11-01 11:01:50.581308 af60eb10 -1 filestore(/var/lib/vcfs/osd/vcfs-10) object_map sync got (1) Operation not permitted
-     0&gt; 2018-11-01 11:01:50.583579 af60eb10 -1 os/filestore/FileStore.cc: In function &apos;void FileStore::sync_entry()&apos; thread af60eb10 time 2018-11-01 11:01:50.581359
-os/filestore/FileStore.cc: 3796: FAILED assert(0 == &quot;object_map sync returned error&quot;)
-</code></pre><h3 id="分析解决"><a href="#分析解决" class="headerlink" title="分析解决"></a>分析解决</h3><p>上面日志中有object_map sync got (1) Operation not permitted关键字，开始以为是权限问题，然后检查了osd数据目录中所有文件的权限，没问题。然后怀疑是leveldb的问题，因为osd的omap是保存在leveldb中的，所以使用下面的方法修复leveldb</p>
-<pre><code>$ python
-…
-&gt;&gt;&gt; import leveldb
-&gt;&gt;&gt; leveldb.RepairDB(&apos;/var/lib/ceph/osd/ceph-$ID/current/omap&apos;)
-</code></pre><p>修复完leveldb之后，重启osd，osd可以正常启动了。</p>
-
-      
-
-      
-    </div>
-    <div class="article-info article-info-index">
-      
-      
-      
-
-      
-        <p class="article-more-link">
-          <a class="article-more-a" href="/2021/02/24/osd常见故障及处理总结/">展开全文 >></a>
         </p>
       
 

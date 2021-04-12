@@ -144,6 +144,75 @@
           <div id="js-content" class="content-ll">
             
   
+    <article id="post-配置ceph osd的coredump" class="article article-type-post  article-index" itemscope itemprop="blogPost">
+  <div class="article-inner">
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="article-title" href="/2021/04/12/配置ceph osd的coredump/">配置ceph osd的coredump</a>
+    </h1>
+  
+
+        
+        <a href="/2021/04/12/配置ceph osd的coredump/" class="archive-article-date">
+  	<time datetime="2021-04-12T08:55:09.112Z" itemprop="datePublished"><i class="icon-calendar icon"></i>2021-04-12</time>
+</a>
+        
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h3 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h3><p>core dump文件作用这里不多介绍，主要为了osd进程有bug导致进程crash了，然后抓取core dump后方便定位bug。</p>
+<h3 id="配置"><a href="#配置" class="headerlink" title="配置"></a>配置</h3><p>一般可以在/etc/profile中用ulimit命令来打开系统所有用户的core dump:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">$ cat /etc/profile</span><br><span class="line">...</span><br><span class="line">echo &quot;/var/crash/core.%e.%p&quot; &gt; /proc/sys/kernel/core_pattern</span><br><span class="line">ulimit -S -c unlimited &gt; /dev/null 2&gt;&amp;1</span><br></pre></td></tr></table></figure>
+<p>但是上面的方式不好的地方是它打开了系统所有用户对应进程的core dump，再就是上面的方式对systemd管理的服务没有作用。</p>
+<p>systemd管理的服务可以单独设置coredump，比如配置ceph-osd服务的，步骤如下：</p>
+<p>1.echo “/var/crash/core.%e.%p” &gt; /proc/sys/kernel/core_pattern<br>2.修改/usr/lib/systemd/system/ceph-osd@.service文件，在[Service]下增加LimitCORE=infinity<br>3.systemctl daemon-reload<br>4.systemctl restart ceph-osd@1<br>5.kill -6 {osd1的pid} #模拟osd.1进程crash</p>
+<p>然后就可以在/var/crash目录下看到生成的core文件了。</p>
+
+      
+
+      
+    </div>
+    <div class="article-info article-info-index">
+      
+      
+      
+
+      
+        <p class="article-more-link">
+          <a class="article-more-a" href="/2021/04/12/配置ceph osd的coredump/">展开全文 >></a>
+        </p>
+      
+
+      
+      <div class="clearfix"></div>
+    </div>
+  </div>
+</article>
+
+<aside class="wrap-side-operation">
+    <div class="mod-side-operation">
+        
+        <div class="jump-container" id="js-jump-container" style="display:none;">
+            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
+                <i class="icon-font icon-back"></i>
+            </a>
+            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
+                <i class="icon-font icon-plane jump-plane"></i>
+            </div>
+        </div>
+        
+        
+    </div>
+</aside>
+
+
+
+
+  
     <article id="post-ceph 计算集群数据恢复时间" class="article article-type-post  article-index" itemscope itemprop="blogPost">
   <div class="article-inner">
     
@@ -1426,164 +1495,6 @@ instructing pg 23.1 on osd.0 to repair
       
         <p class="article-more-link">
           <a class="article-more-a" href="/2021/02/24/解决一个部署osd时奇葩的报错问题/">展开全文 >></a>
-        </p>
-      
-
-      
-      <div class="clearfix"></div>
-    </div>
-  </div>
-</article>
-
-<aside class="wrap-side-operation">
-    <div class="mod-side-operation">
-        
-        <div class="jump-container" id="js-jump-container" style="display:none;">
-            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
-                <i class="icon-font icon-back"></i>
-            </a>
-            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
-                <i class="icon-font icon-plane jump-plane"></i>
-            </div>
-        </div>
-        
-        
-    </div>
-</aside>
-
-
-
-
-  
-    <article id="post-集群osd full错误处理" class="article article-type-post  article-index" itemscope itemprop="blogPost">
-  <div class="article-inner">
-    
-      <header class="article-header">
-        
-  
-    <h1 itemprop="name">
-      <a class="article-title" href="/2021/02/24/集群osd full错误处理/">集群osd full错误处理</a>
-    </h1>
-  
-
-        
-        <a href="/2021/02/24/集群osd full错误处理/" class="archive-article-date">
-  	<time datetime="2021-02-24T11:52:14.381Z" itemprop="datePublished"><i class="icon-calendar icon"></i>2021-02-24</time>
-</a>
-        
-      </header>
-    
-    <div class="article-entry" itemprop="articleBody">
-      
-        <h3 id="一、前言"><a href="#一、前言" class="headerlink" title="一、前言"></a>一、前言</h3><p>之前也处理过集群出现osd full时的问题，但是没有整理出来，今天又处理了这种问题，所以就整理记录下来。</p>
-<h3 id="二、环境准备"><a href="#二、环境准备" class="headerlink" title="二、环境准备"></a>二、环境准备</h3><p>首先准备一个正常的集群。</p>
-<pre><code>[root@ceph01 ~]# ceph -s
-    cluster caf6dbda-86e7-4c4c-b8f7-a9a12d0a39b0
-     health HEALTH_OK
-     monmap e5: 1 mons at {ceph01=192.168.10.20:6789/0}
-            election epoch 15, quorum 0 ceph01
-      fsmap e12: 1/1/1 up {0=ceph01=up:active}
-     osdmap e262: 6 osds: 6 up, 6 in
-            flags sortbitwise,require_jewel_osds
-      pgmap v57886: 344 pgs, 14 pools, 11636 MB data, 3115 objects
-            23548 MB used, 68545 MB / 92093 MB avail
-                 344 active+clean
-</code></pre><h3 id="三、开始实验"><a href="#三、开始实验" class="headerlink" title="三、开始实验"></a>三、开始实验</h3><p>为了方便测试，首先将集群的nearfull和full设置低一些，这样就可以少写入点测试数据，使集群快速的能达到full的状态。</p>
-<pre><code>[root@ceph01 ~]# ceph pg set_nearfull_ratio 0.2
-[root@ceph01 ~]# ceph pg set_full_ratio 0.3
-</code></pre><p>这里将osd的nearfull设置为0.2，full设置为0.3。开始往集群写入测试数据</p>
-<pre><code>[root@ceph01 ~]# bench -p rbd 1000 write --no-cleanup
-</code></pre><p>写入过程中，另开一个窗口，观察集群状态</p>
-<pre><code>[root@ceph01 ~]# ceph -s
-    cluster caf6dbda-86e7-4c4c-b8f7-a9a12d0a39b0
-         health HEALTH_WARN
-                1 near full osd(s)
-         monmap e5: 1 mons at {ceph01=192.168.10.20:6789/0}
-                election epoch 15, quorum 0 ceph01
-          fsmap e12: 1/1/1 up {0=ceph01=up:active}
-         osdmap e227: 6 osds: 6 up, 6 in
-                flags nearfull,sortbitwise,require_jewel_osds
-          pgmap v56958: 344 pgs, 14 pools, 7332 MB data, 2039 objects
-                15512 MB used, 76581 MB / 92093 MB avail
-                     344 active+clean
-      client io 42989 kB/s wr, 0 op/s rd, 10 op/s wr
-</code></pre><p>可以看到，写入一段时间之后，集群出现near full告警，但是客户端可以继续写入，继续观察集群状态</p>
-<pre><code>[root@ceph01 ~]# ceph -s
-    cluster caf6dbda-86e7-4c4c-b8f7-a9a12d0a39b0
-     health HEALTH_ERR
-            6 full osd(s)
-            full flag(s) set
-     monmap e5: 1 mons at {ceph01=192.168.10.20:6789/0}
-            election epoch 15, quorum 0 ceph01
-      fsmap e12: 1/1/1 up {0=ceph01=up:active}
-     osdmap e225: 6 osds: 6 up, 6 in
-            flags full,sortbitwise,require_jewel_osds
-      pgmap v56765: 344 pgs, 14 pools, 21672 MB data, 5626 objects
-            43616 MB used, 48477 MB / 92093 MB avail
-                 344 active+clean
-</code></pre><p>可以看到集群状态变成err了，提示6 full osd(s)，此时rados bench写入被挂起</p>
-<pre><code>2018-07-27 14:15:29.408205 7f257d824a40  0 client.78915.objecter  FULL, paused modify 0x55a5acae1900 tid 0
-2018-07-27 14:15:29.468281 7f257d824a40  0 client.78915.objecter  FULL, paused modify 0x55a5acb084a0 tid 0
-  309      16      2056      2040   25.3392         3     6.43313     2.48428
-2018-07-27 14:15:29.945256 7f257d824a40  0 client.78915.objecter  FULL, paused modify 0x55a5acaf3880 tid 0
-2018-07-27 14:15:29.946301 7f257d824a40  0 client.78915.objecter  FULL, paused modify 0x55a5acaf20a0 tid 0
-2018-07-27 14:15:29.946332 7f257d824a40  0 client.78915.objecter  FULL, paused modify 0x55a5acaefa30 tid 0
-2018-07-27 14:15:30.033664 7f257d824a40  0 client.78915.objecter  FULL, paused modify 0x55a5acaea8e0 tid 0
-2018-07-27 14:15:30.037818 7f257d824a40  0 client.78915.objecter  FULL, paused modify 0x55a5acaf0620 tid 0
-  310      16      2061      2045   25.3226        20     6.73312     2.49643
-2018-07-27 14:15:31.248976 7f257d824a40  0 client.78915.objecter  FULL, paused modify 0x55a5acb00240 tid 0
-2018-07-27 14:15:31.396116 7f257d824a40  0 client.78915.objecter  FULL, paused modify 0x55a5acae6410 tid 0
-  311      16      2063      2047   25.2691         8     8.38232     2.50219
-2018-07-27 14:15:31.718398 7f257d824a40  0 client.78915.objecter  FULL, paused modify 0x55a5acaf14b0 tid 0
-  312      16      2064      2048   25.2036         4     9.97337     2.50583
-</code></pre><p>我们来看下详细的错误信息</p>
-<pre><code>[root@ceph01 ~]# ceph health detail
-HEALTH_ERR 1 full osd(s); 5 near full osd(s); full flag(s) set
-osd.2 is full at 30%
-osd.0 is near full at 23%
-osd.1 is near full at 22%
-osd.3 is near full at 21%
-osd.4 is near full at 25%
-osd.5 is near full at 28%
-full flag(s) set
-</code></pre><p>可以看到osd.2的使用量达到了30%（我们设置的full ratio就是0.3），此时集群状态err，客户端不能读写了。</p>
-<p>使用rados rm来删除对象也不行，会报错</p>
-<pre><code>[root@ceph01 ~]# rados -p rbd rm benchmark_data_ceph01_112826_object350
-2018-07-27 14:20:07.302692 7f6fb3e3aa40  0 client.79057.objecter  FULL, paused modify 0x5621bfa279d0 tid 0
-</code></pre><p>这里可以理解为，集群出现full告警之后，客户端不能读写集群数据了。</p>
-<h3 id="三、总结"><a href="#三、总结" class="headerlink" title="三、总结"></a>三、总结</h3><p>集群某个osd盘使用量达到集群的full ratio时集群将不可读写。</p>
-<p>osd盘满大概可以分为两种情况：</p>
-<ol>
-<li>由于pg规划的不合理，导致一两个osd盘满了，其他osd空间还很富余；<blockquote>
-<p>这种情况可以通过调整盘满的osd的权重，ceph osd reweight OSDID xxx<br> 然后等待数据迁移完成之后，增加合理pg数，最后等待数据均衡</p>
-</blockquote>
-</li>
-</ol>
-<ol>
-<li>整体osd盘都快满了；<blockquote>
-<p>这种情况通过增加osd来解决，获取删除一些数据之后，再扩容。<br> 想办法让集群恢复到可读写状态，然后来删除一些数据，从而释放集群空间。恢复的方式：</p>
-<ul>
-<li>调高full ratio：<code>$ ceph pg set_nearfull_ratio 0.85</code>和<code>$ ceph pg set_full_ratio 0.95</code></li>
-<li>通过tune2fs命令释放磁盘空间：<code>$ tune2fs -m 1 /dev/sdc1</code></li>
-<li>删除数据目录无用文件</li>
-</ul>
-</blockquote>
-</li>
-</ol>
-<p>也可以预先在osd的数据目录下放置一个20G左右的文件，如果万一出现osd盘满的情况，通过rm这个文件来释放空间。为了防止出现集群被写满，要有完善的集群监控机制，在集群快写满时，能及时地处理。</p>
-
-      
-
-      
-    </div>
-    <div class="article-info article-info-index">
-      
-      
-      
-
-      
-        <p class="article-more-link">
-          <a class="article-more-a" href="/2021/02/24/集群osd full错误处理/">展开全文 >></a>
         </p>
       
 

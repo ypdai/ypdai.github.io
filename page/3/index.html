@@ -144,6 +144,187 @@
           <div id="js-content" class="content-ll">
             
   
+    <article id="post-osd常见故障及处理总结" class="article article-type-post  article-index" itemscope itemprop="blogPost">
+  <div class="article-inner">
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="article-title" href="/2021/02/24/osd常见故障及处理总结/">osd常见故障及处理总结</a>
+    </h1>
+  
+
+        
+        <a href="/2021/02/24/osd常见故障及处理总结/" class="archive-article-date">
+  	<time datetime="2021-02-24T11:52:12.851Z" itemprop="datePublished"><i class="icon-calendar icon"></i>2021-02-24</time>
+</a>
+        
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h3 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h3><p>这篇文章主要想将自己平时遇到的或者是别人遇到的一些osd的问题和处理过程做个总结汇总，方便以后快速的查找。（会持续更新）</p>
+<hr>
+<h2 id="osdmap解析失败，导致osd启动失败"><a href="#osdmap解析失败，导致osd启动失败" class="headerlink" title="osdmap解析失败，导致osd启动失败"></a>osdmap解析失败，导致osd启动失败</h2><h4 id="故障现象"><a href="#故障现象" class="headerlink" title="故障现象"></a>故障现象</h4><p>修改osd的调试日志到20，然后启动osd报错，日志如下：</p>
+<pre><code>2019-04-15 18:47:52.985665 7ff10b6c2800 10 osd.66 pg_epoch: 671640 pg[1.462a( v 671616&apos;286461 lc 667530&apos;286361 (66710
+2&apos;283292,671616&apos;286461] local-les=671640 n=3485 ec=28764 les/c/f 671630/671165/0 671632/671634/671634) [66,75]/[66,104] r=0 lpr=671640 pi=665415-671633/18 crt=671616&apos;286461 lcod 0&apos;0 mlcod 0&apos;0 inactive NIBBLEWISE m=33] Not blocking outgoing recovery messages    -4&gt; 2019-04-15 18:47:52.985676 7ff10b6c2800 10 osd.66 671649 load_pgs loaded pg[1.462a( v 671616&apos;286461 lc 667530&apos;286361 
+(667102&apos;283292,671616&apos;286461] local-les=671640 n=3485 ec=28764 les/c/f 671630/671165/0 671632/671634/671634) [66,75]/[66,104] r=0 lpr=671640 pi=665415-671633/18 crt=671616&apos;286461 lcod 0&apos;0 mlcod 0&apos;0 inactive NIBBLEWISE m=33] log((667102&apos;283292,671616&apos;286461], crt=671616&apos;286461)    -3&gt; 2019-04-15 18:47:52.985870 7ff10b6c2800 10 osd.66 671649 pgid 1.6303 coll 1.6303_head
+2019-04-15 18:47:52.985984 7ff10b6c2800 20 osd.66 0 get_map 671651 - loading and decoding 0x7ff0cf3a2080
+2019-04-15 18:47:52.986030 7ff10b6c2800 10 osd.66 0 add_map_bl 671651 0 bytes
+2019-04-15 18:47:52.989844 7ff10b6c2800 -1 *** Caught signal (Aborted) **
+ in thread 7ff10b6c2800 thread_name:ceph-osd
+
+ ceph version 10.2.0 (3a9fba20ec743699b69bd0181dd6c54dc01c64b9)
+ 1: (()+0x8e4fd2) [0x55c3b4a80fd2]
+ 2: (()+0xf100) [0x7ff10a069100]
+ 3: (gsignal()+0x37) [0x7ff10862c5f7]
+ 4: (abort()+0x148) [0x7ff10862dce8]
+ 5: (__gnu_cxx::__verbose_terminate_handler()+0x165) [0x7ff108f309d5]
+ 6: (()+0x5e946) [0x7ff108f2e946]
+ 7: (()+0x5e973) [0x7ff108f2e973]
+ 8: (()+0x5eb93) [0x7ff108f2eb93]
+ 9: (()+0x9e8d85) [0x55c3b4b84d85]
+ 10: (OSDMap::decode(ceph::buffer::list::iterator&amp;)+0x6d) [0x55c3b4b3aefd]
+ 11: (OSDMap::decode(ceph::buffer::list&amp;)+0x1e) [0x55c3b4b3c1de]
+ 12: (OSDService::try_get_map(unsigned int)+0x45b) [0x55c3b45273ab]
+ 13: (OSD::load_pgs()+0x12bc) [0x55c3b452b33c]
+ 14: (OSD::init()+0x1f74) [0x55c3b453d0c4]
+ 15: (main()+0x29d1) [0x55c3b44a4bf1]
+ 16: (__libc_start_main()+0xf5) [0x7ff108618b15]
+</code></pre><h4 id="故障分析"><a href="#故障分析" class="headerlink" title="故障分析"></a>故障分析</h4><p>日志里面看到osd在解析osdmap 671651这个epoch的时候报错。</p>
+<h4 id="解决办法"><a href="#解决办法" class="headerlink" title="解决办法"></a>解决办法</h4><p>到这个osd的数据目录下find找下这个epoch的osdmap所在目录:</p>
+<pre><code>[root@host10 osd]# find ceph-66/* -name &quot;*671652*&quot;
+ceph-66/current/meta/DIR_4/DIR_1/DIR_E/osdmap.671652__0_C85F4E14__none
+ceph-66/current/meta/DIR_B/DIR_4/DIR_1/inc\uosdmap.671652__0_10EC614B__none
+</code></pre><p>然后到其他正常的osd的数据目录下找到这个epoch的osdmap：</p>
+<pre><code>[root@host10 osd]# find ceph-26/* -name &quot;*671652*&quot;
+ceph-26/current/meta/DIR_4/DIR_1/DIR_E/osdmap.671652__0_C85F4E14__none
+ceph-26/current/meta/DIR_B/DIR_4/DIR_1/inc\uosdmap.671652__0_10EC614B__none
+</code></pre><p>最后cp正常的osd的osdmap去覆盖出问题的osd的osdmap，然后启动可以正常启动osd了。</p>
+<hr>
+<h2 id="osdmap内存占用过大，导致osd进程起不来"><a href="#osdmap内存占用过大，导致osd进程起不来" class="headerlink" title="osdmap内存占用过大，导致osd进程起不来"></a>osdmap内存占用过大，导致osd进程起不来</h2><h4 id="故障现象-1"><a href="#故障现象-1" class="headerlink" title="故障现象"></a>故障现象</h4><p>osd进程启动不成功，<code>dmesg</code>可以看到类似下面的输出：</p>
+<pre><code>Jan  5 16:01:28 ceph02 kernel: [171428.546446] Out of memory: Kill process 6712 (ceph-osd) score 36 or sacrifice child
+Jan  5 16:01:28 ceph02 kernel: [171428.546669] Killed process 6712 (ceph-osd) total-vm:1700052kB, anon-rss:822856kB, file-rss:14048k
+</code></pre><h4 id="故障分析-1"><a href="#故障分析-1" class="headerlink" title="故障分析"></a>故障分析</h4><p>当时的操作是将一个down机很久的机器启动，但是该主机上的osd节点epoch和当前epoch相差2w左右，导致osdmap过多而占用内存过大，从而被OS杀掉。</p>
+<h4 id="解决办法-1"><a href="#解决办法-1" class="headerlink" title="解决办法"></a>解决办法</h4><p>1.设置如下参数，降低内存中osdmap的数量</p>
+<pre><code>osd_map_cache_size = 20
+osd_map_max_advance = 10
+osd_mon_report_interval_min = 10
+osd_pg_stat_report_interval_max = 10
+paxos_service_trim_min = 10
+mon_min_osdmap_epochs = 20
+</code></pre><p>2.找到相关的<a href="http://tracker.ceph.com/issues/13990" target="_blank" rel="noopener">issue</a> ，将这个问题提供的patch集成到自己的版本，编译，打包。</p>
+<hr>
+<h2 id="osdmap不存在，导致osd启动失败"><a href="#osdmap不存在，导致osd启动失败" class="headerlink" title="osdmap不存在，导致osd启动失败"></a>osdmap不存在，导致osd启动失败</h2><h4 id="故障现象-2"><a href="#故障现象-2" class="headerlink" title="故障现象"></a>故障现象</h4><p>osd启动失败，查看osd日志，有以下关键信息：</p>
+<pre><code>7f3a77ce2800  0 osd.256 23801 crush map has features 2268850290688, adjusting msgr requires for clients
+7f3a77ce2800  0 osd.256 23801 crush map has features 2543728197632 was 8705, adjusting msgr requires for mons
+7f3a77ce2800  0 osd.256 23801 crush map has features 20135914242048, adjusting msgr requires for osds
+7f3a77ce2800  0 osd.256 23801 load_pgs
+7f3a77ce2800 -1 osd.256 23801 load_pgs: have pgid 0.18 at epoch 27601, but missing map.  Crashing.
+ 0&gt; 2016-08-13 13:35:41.172996 7f3a77ce2800 -1 osd/OSD.cc: In function &apos;void OSD::load_pgs()&apos; thread 7f3a77ce2800 time 2016-08-13 13:35:41.167042
+osd/OSD.cc: 2840: FAILED assert(0 == &quot;Missing map in load_pgs&quot;)
+
+ ceph version 6.0.0.s16-94 (762b8d4154bcb91d1bfcabcaf74e756d313596ab)
+ 1: (OSD::load_pgs()+0x3616) [0x6749b6]
+ 2: (OSD::init()+0x173e) [0x688dbe]
+ 3: (main()+0x384f) [0x62f7ef]
+ 4: (__libc_start_main()+0xfd) [0x33c901ed1d]
+ 5: /usr/bin/ceph-osd() [0x62aef9]
+ NOTE: a copy of the executable, or `objdump -rdS &lt;executable&gt;` is needed to interpret this.
+</code></pre><h4 id="故障分析-2"><a href="#故障分析-2" class="headerlink" title="故障分析"></a>故障分析</h4><p>根据堆栈信息可以看出，是在启动osd，加载pg时，读不到相应epoch的osdmap，从而导致osd崩溃。</p>
+<h4 id="解决办法-2"><a href="#解决办法-2" class="headerlink" title="解决办法"></a>解决办法</h4><p>1.看下其他osd节点有没有这个epoch的osdmap，如果有，就从其他节点拷贝到<code>/var/lib/ceph/osd/ceph-$osdid/current/meta</code>下的相关目录。<br>如果没有，可以尝试下面的方法：</p>
+<pre><code>ceph osd getmap $epoch -o /tmp/osdmap.$epoch 
+osdmaptool --print /tmp/osdmap.$epoch
+cp /tmp/osdmap.$epoch /var/lib/ceph/osd/ceph-$osdid/current/meta
+</code></pre><p>然后再启动osd。</p>
+<hr>
+<h2 id="osd-journal读取失败，导致osd启动失败"><a href="#osd-journal读取失败，导致osd启动失败" class="headerlink" title="osd journal读取失败，导致osd启动失败"></a>osd journal读取失败，导致osd启动失败</h2><h4 id="故障现象-3"><a href="#故障现象-3" class="headerlink" title="故障现象"></a>故障现象</h4><p>启动osd报错，日志如下：</p>
+<pre><code>2019-04-16 09:14:11.564612 7f0dd5287800  3 journal journal_replay: r = 0, op_seq now 52521981
+2019-04-16 09:14:11.564642 7f0dd5287800  2 journal read_entry 3229810688 : seq 52521982 1099 bytes
+2019-04-16 09:14:11.564649 7f0dd5287800  3 journal journal_replay: applying op seq 52521982
+2019-04-16 09:14:11.567968 7f0dd5287800  3 journal journal_replay: r = 0, op_seq now 52521982
+2019-04-16 09:14:11.572512 7f0dd5287800  2 journal read_entry 3229814784 : seq 52521983 4196212 bytes
+2019-04-16 09:14:11.572523 7f0dd5287800  3 journal journal_replay: applying op seq 52521983
+2019-04-16 09:14:11.614784 7f0dd5287800  3 journal journal_replay: r = 0, op_seq now 52521983
+2019-04-16 09:14:11.615111 7f0dd5287800  2 journal read_entry 3234017280 : seq 52521984 1099 bytes
+2019-04-16 09:14:11.615119 7f0dd5287800  3 journal journal_replay: applying op seq 52521984
+2019-04-16 09:14:11.619353 7f0dd5287800  3 journal journal_replay: r = 0, op_seq now 52521984
+2019-04-16 09:14:11.619370 7f0dd5287800 -1 journal Unable to read past sequence 52521985 but header indicates the jou
+rnal has committed up through 52522295, journal is corrupt     0&gt; 2019-04-16 09:14:11.622636 7f0dd5287800 -1 os/filestore/FileJournal.cc: In function &apos;bool FileJournal::read_entry(cep
+h::bufferlist&amp;, uint64_t&amp;, bool*)&apos; thread 7f0dd5287800 time 2019-04-16 09:14:11.619375os/filestore/FileJournal.cc: 2031: FAILED assert(0)
+
+ ceph version 10.2.0 (3a9fba20ec743699b69bd0181dd6c54dc01c64b9)
+ 1: (ceph::__ceph_assert_fail(char const*, char const*, int, char const*)+0x8b) [0x55e3dff0afab]
+ 2: (FileJournal::read_entry(ceph::buffer::list&amp;, unsigned long&amp;, bool*)+0x8f1) [0x55e3dfcc5091]
+ 3: (JournalingObjectStore::journal_replay(unsigned long)+0x1d5) [0x55e3dfc19f05]
+ 4: (FileStore::mount()+0x3bf6) [0x55e3dfbf2346]
+ 5: (OSD::init()+0x27d) [0x55e3df8ce3cd]
+ 6: (main()+0x29d1) [0x55e3df837bf1]
+ 7: (__libc_start_main()+0xf5) [0x7f0dd21ddb15]
+</code></pre><h4 id="故障分析-3"><a href="#故障分析-3" class="headerlink" title="故障分析"></a>故障分析</h4><p>osd日志里面看到因为osd在重放journal的时候无法读取52521985这个序号的journal，导致osd进程退出。</p>
+<h4 id="解决办法-3"><a href="#解决办法-3" class="headerlink" title="解决办法"></a>解决办法</h4><p>把osd的journal_ignore_corruption参数设置为true后，osd启动成功。</p>
+<hr>
+<h2 id="osd启动失败，日志提示object-map-sync-got-1-Operation-not-permitted"><a href="#osd启动失败，日志提示object-map-sync-got-1-Operation-not-permitted" class="headerlink" title="osd启动失败，日志提示object_map sync got (1) Operation not permitted"></a>osd启动失败，日志提示object_map sync got (1) Operation not permitted</h2><h3 id="现象"><a href="#现象" class="headerlink" title="现象"></a>现象</h3><p>使用vdbench工具往cephfs挂载点写入数据过程中，osd down掉，重启osd也启动不了，osd日志：</p>
+<pre><code>2018-11-01 11:01:50.482203 b6867000  5 osd.10 pg_epoch: 975 pg[2.25( v 954&apos;2580 (0&apos;0,954&apos;2580] local-les=959 n=3 ec=66 les/c/f 959/959/0 975/975/714) [9,5,10]/[9,5] r=-1 lpr=0 pi=708-974/40 crt=954&apos;2580 lcod 0&apos;0 inactive NOTIFY NIBBLEWISE] enter Reset
+    -8&gt; 2018-11-01 11:01:50.483487 b6867000  5 osd.10 pg_epoch: 975 pg[0.10b(unlocked)] enter Initial
+    -7&gt; 2018-11-01 11:01:50.520894 b6867000  5 osd.10 pg_epoch: 975 pg[0.10b( v 937&apos;6036 (150&apos;3000,937&apos;6036] local-les=959 n=798 ec=77 les/c/f 959/959/0 975/975/736) [6,10]/[6] r=-1 lpr=0 pi=721-974/19 crt=937&apos;6036 lcod 0&apos;0 inactive NOTIFY NIBBLEWISE] exit Initial 0.037408 0 0.000000
+    -6&gt; 2018-11-01 11:01:50.520972 b6867000  5 osd.10 pg_epoch: 975 pg[0.10b( v 937&apos;6036 (150&apos;3000,937&apos;6036] local-les=959 n=798 ec=77 les/c/f 959/959/0 975/975/736) [6,10]/[6] r=-1 lpr=0 pi=721-974/19 crt=937&apos;6036 lcod 0&apos;0 inactive NOTIFY NIBBLEWISE] enter Reset
+    -5&gt; 2018-11-01 11:01:50.522519 b6867000  5 osd.10 pg_epoch: 975 pg[1.15b(unlocked)] enter Initial
+    -4&gt; 2018-11-01 11:01:50.560698 b6867000  5 osd.10 pg_epoch: 975 pg[1.15b( v 959&apos;27450 (873&apos;24391,959&apos;27450] local-les=959 n=4307 ec=63 les/c/f 959/959/0 975/975/973) [10,1]/[1] r=-1 lpr=0 pi=958-974/8 crt=959&apos;27450 lcod 0&apos;0 inactive NOTIFY NIBBLEWISE] exit Initial 0.038179 0 0.000000
+    -3&gt; 2018-11-01 11:01:50.560773 b6867000  5 osd.10 pg_epoch: 975 pg[1.15b( v 959&apos;27450 (873&apos;24391,959&apos;27450] local-les=959 n=4307 ec=63 les/c/f 959/959/0 975/975/973) [10,1]/[1] r=-1 lpr=0 pi=958-974/8 crt=959&apos;27450 lcod 0&apos;0 inactive NOTIFY NIBBLEWISE] enter Reset
+    -2&gt; 2018-11-01 11:01:50.562743 b6867000  5 osd.10 pg_epoch: 975 pg[2.5d(unlocked)] enter Initial
+    -1&gt; 2018-11-01 11:01:50.581308 af60eb10 -1 filestore(/var/lib/vcfs/osd/vcfs-10) object_map sync got (1) Operation not permitted
+     0&gt; 2018-11-01 11:01:50.583579 af60eb10 -1 os/filestore/FileStore.cc: In function &apos;void FileStore::sync_entry()&apos; thread af60eb10 time 2018-11-01 11:01:50.581359
+os/filestore/FileStore.cc: 3796: FAILED assert(0 == &quot;object_map sync returned error&quot;)
+</code></pre><h3 id="分析解决"><a href="#分析解决" class="headerlink" title="分析解决"></a>分析解决</h3><p>上面日志中有object_map sync got (1) Operation not permitted关键字，开始以为是权限问题，然后检查了osd数据目录中所有文件的权限，没问题。然后怀疑是leveldb的问题，因为osd的omap是保存在leveldb中的，所以使用下面的方法修复leveldb</p>
+<pre><code>$ python
+…
+&gt;&gt;&gt; import leveldb
+&gt;&gt;&gt; leveldb.RepairDB(&apos;/var/lib/ceph/osd/ceph-$ID/current/omap&apos;)
+</code></pre><p>修复完leveldb之后，重启osd，osd可以正常启动了。</p>
+
+      
+
+      
+    </div>
+    <div class="article-info article-info-index">
+      
+      
+      
+
+      
+        <p class="article-more-link">
+          <a class="article-more-a" href="/2021/02/24/osd常见故障及处理总结/">展开全文 >></a>
+        </p>
+      
+
+      
+      <div class="clearfix"></div>
+    </div>
+  </div>
+</article>
+
+<aside class="wrap-side-operation">
+    <div class="mod-side-operation">
+        
+        <div class="jump-container" id="js-jump-container" style="display:none;">
+            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
+                <i class="icon-font icon-back"></i>
+            </a>
+            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
+                <i class="icon-font icon-plane jump-plane"></i>
+            </div>
+        </div>
+        
+        
+    </div>
+</aside>
+
+
+
+
+  
     <article id="post-osd：pg均衡工具balancer" class="article article-type-post  article-index" itemscope itemprop="blogPost">
   <div class="article-inner">
     
@@ -1682,302 +1863,6 @@ docker run -it -v /mnt:/mydata ubuntu
       
         <p class="article-more-link">
           <a class="article-more-a" href="/2021/02/24/ceph三种客户端消息到rados的路径/">展开全文 >></a>
-        </p>
-      
-
-      
-      <div class="clearfix"></div>
-    </div>
-  </div>
-</article>
-
-<aside class="wrap-side-operation">
-    <div class="mod-side-operation">
-        
-        <div class="jump-container" id="js-jump-container" style="display:none;">
-            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
-                <i class="icon-font icon-back"></i>
-            </a>
-            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
-                <i class="icon-font icon-plane jump-plane"></i>
-            </div>
-        </div>
-        
-        
-    </div>
-</aside>
-
-
-
-
-  
-    <article id="post-cephfs性能优化之file layouts" class="article article-type-post  article-index" itemscope itemprop="blogPost">
-  <div class="article-inner">
-    
-      <header class="article-header">
-        
-  
-    <h1 itemprop="name">
-      <a class="article-title" href="/2021/02/24/cephfs性能优化之file layouts/">使用file layouts来提升cephfs的读性能</a>
-    </h1>
-  
-
-        
-        <a href="/2021/02/24/cephfs性能优化之file layouts/" class="archive-article-date">
-  	<time datetime="2021-02-24T11:52:11.173Z" itemprop="datePublished"><i class="icon-calendar icon"></i>2021-02-24</time>
-</a>
-        
-      </header>
-    
-    <div class="article-entry" itemprop="articleBody">
-      
-        <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>这里想介绍下，如何使用cephfs的FILE LAYOUTS功能来提升cephfs的读性能。</p>
-<p>我们都知道ceph客户端在读数据的时候，ceph客户端通过crush算法算出自己所需的数据在哪个osd上，然后直接和这个osd通讯来获取数据。我们就利用这个很cool特性再结合cephfs的FILE LAYOUTS功能来提升集群的读性能。</p>
-<p>总体思路就是让每个内核客户端（以下简称KC）的主本数据放在自己所在节点的osd上，这样读的时候就直接和本机上的osd通信读取数据，就不用跑到其他节点上去读取数据，从而避免在和其他节点通讯时的网络消耗。</p>
-<p>注意FILE LAYOUTS这种方式有几个限制：</p>
-<ul>
-<li>KC需要挂载到集群的节点上</li>
-<li>不能在多个KC上同时对同一个目录配置不同的FILE LAYOUTS（如果要实现需要自己改代码）</li>
-</ul>
-<p>好了，下面就开始动手操作了。</p>
-<h2 id="环境介绍"><a href="#环境介绍" class="headerlink" title="环境介绍"></a>环境介绍</h2><p>下面把实验环境的操作系统版本及其内核版本、ceph的版本、以及搭建的ceph测试集群环境给出来，以供参考。如果你的环境和我下面给出的环境不一致也没关系。只要对比你环境在配置之前和配置之后的性能数据就可以了。</p>
-<h3 id="操作系统版本"><a href="#操作系统版本" class="headerlink" title="操作系统版本"></a>操作系统版本</h3><pre><code>[root@ceph01 ~]# cat /etc/redhat-release 
-CentOS Linux release 7.5.1804 (Core) 
-</code></pre><h3 id="操作系统内核版本"><a href="#操作系统内核版本" class="headerlink" title="操作系统内核版本"></a>操作系统内核版本</h3><pre><code>[root@ceph01 ~]# uname -a
-Linux ceph01 4.17.3-1.el7.elrepo.x86_64 #1 SMP Tue Jun 26 10:14:25 EDT 2018 x86_64 x86_64 x86_64 GNU/Linux
-</code></pre><h3 id="ceph版本"><a href="#ceph版本" class="headerlink" title="ceph版本"></a>ceph版本</h3><pre><code>[root@ceph01 ~]# ceph -v
-ceph version 10.2.10 (5dc1e4c05cb68dbf62ae6fce3f0700e4654fdbbe)
-</code></pre><h3 id="测试集群初始环境"><a href="#测试集群初始环境" class="headerlink" title="测试集群初始环境"></a>测试集群初始环境</h3><p>我们用ceph01、ceph02这两个节点（虚拟机）快速搭建一个单mon，单mds和4个osd的测试集群，用作下面的测试。</p>
-<p>集群整体情况如下：</p>
-<pre><code>[root@ceph01 ~]# ceph -s
-    cluster caf6dbda-86e7-4c4c-b8f7-a9a12d0a39b0
-     health HEALTH_OK
-     monmap e5: 1 mons at {ceph01=192.168.10.20:6789/0}
-            election epoch 24, quorum 0 ceph01
-      fsmap e69: 1/1/1 up {0=ceph01=up:active}
-     osdmap e438: 4 osds: 4 up, 4 in
-            flags sortbitwise,require_jewel_osds
-      pgmap v167598: 256 pgs, 3 pools, 3618 MB data, 916 objects
-            7529 MB used, 84563 MB / 92093 MB avail
-                 256 active+clean
-
-[root@ceph01 ~]# ceph osd tree
-ID WEIGHT  TYPE NAME        UP/DOWN REWEIGHT PRIMARY-AFFINITY 
--1 0.05799 root default                                       
--2 0.02899     host ceph01                                    
- 0 0.01500         osd.0         up  1.00000          1.00000 
- 1 0.01500         osd.1         up  1.00000          1.00000 
--3 0.02899     host ceph02                                    
- 2 0.01500         osd.2         up  1.00000          1.00000 
- 3 0.01500         osd.3         up  1.00000          1.00000     
-</code></pre><p>创建metadata和data池，然后创建名称叫做cephfs的ceph文件系统</p>
-<pre><code>[root@ceph01 ~]# ceph fs ls
-name: cephfs, metadata pool: metadata, data pools: [data ]
-</code></pre><p>然后在ceph01挂载cephfs的内核客户端，然后在集群目录里面创建一个testdir测试目录</p>
-<pre><code>[root@ceph01 ~]# mkdir /mycephfs
-[root@ceph01 ~]# mount -t ceph 192.168.10.20:/ /mycephfs/
-[root@ceph01 ~]# mkdir /mycephfs/testdir/
-</code></pre><p>ok，初始的环境我们准备好了，下面开始配置。</p>
-<h2 id="获取基准性能数据"><a href="#获取基准性能数据" class="headerlink" title="获取基准性能数据"></a>获取基准性能数据</h2><p>因为我们要看配置FILE LAYOUTS之前和配置FILE LAYOUTS之后的效果，所以在配置之前，需要先获取当前环境的性能，你根据你的实际情况来获取，你可能是通过CIFS、NFS或其他方式将cephfs给到客户端的，比如如果是CIFS，那就是在CIFS客户端用IO测试工具获取一组读数据，记录下来，之后配置好FILE LAYOUTS，再用相同的方式获取一组读数据，就可以对比了。</p>
-<h2 id="配置和测试过程"><a href="#配置和测试过程" class="headerlink" title="配置和测试过程"></a>配置和测试过程</h2><p>因为我们等下需要用到setfattr和getfattr命令，所以如果你的环境里面没有这两个命令的话，使用下面的命令安装下就好了：</p>
-<pre><code>[root@ceph01 ~]# yum install -y attr
-</code></pre><h3 id="配置crushmap"><a href="#配置crushmap" class="headerlink" title="配置crushmap"></a>配置crushmap</h3><p>获取当前的crushmap如下：</p>
-<pre><code># begin crush map
-tunable choose_local_tries 0
-tunable choose_local_fallback_tries 0
-tunable choose_total_tries 50
-tunable chooseleaf_descend_once 1
-tunable chooseleaf_vary_r 1
-tunable straw_calc_version 1
-
-# devices
-device 0 osd.0
-device 1 osd.1
-device 2 osd.2
-device 3 osd.3
-
-# types
-type 0 osd
-type 1 host
-type 2 chassis
-type 3 rack
-type 4 row
-type 5 pdu
-type 6 pod
-type 7 room
-type 8 datacenter
-type 9 region
-type 10 root
-
-# buckets
-host ceph01 {
-    id -2        # do not change unnecessarily
-    # weight 0.029
-    alg straw
-    hash 0    # rjenkins1
-    item osd.0 weight 0.015
-    item osd.1 weight 0.015
-}
-host ceph02 {
-    id -3        # do not change unnecessarily
-    # weight 0.029
-    alg straw
-    hash 0    # rjenkins1
-    item osd.2 weight 0.015
-    item osd.3 weight 0.015
-}
-root default {
-    id -1        # do not change unnecessarily
-    # weight 0.058
-    alg straw
-    hash 0    # rjenkins1
-    item ceph01 weight 0.029
-    item ceph02 weight 0.029
-}
-
-# rules
-rule replicated_ruleset {
-    ruleset 0
-    type replicated
-    min_size 1
-    max_size 10
-    step take default
-    step chooseleaf firstn 0 type host
-    step emit
-}
-# end crush map
-</code></pre><p>修改之后的crushmap如下：</p>
-<pre><code># begin crush map
-tunable choose_local_tries 0
-tunable choose_local_fallback_tries 0
-tunable choose_total_tries 50
-tunable chooseleaf_descend_once 1
-tunable chooseleaf_vary_r 1
-tunable straw_calc_version 1
-
-# devices
-device 0 osd.0
-device 1 osd.1
-device 2 osd.2
-device 3 osd.3
-
-# types
-type 0 osd
-type 1 host
-type 2 chassis
-type 3 rack
-type 4 row
-type 5 pdu
-type 6 pod
-type 7 room
-type 8 datacenter
-type 9 region
-type 10 root
-
-# buckets
-host ceph01 {
-    id -2        # do not change unnecessarily
-    # weight 0.029
-    alg straw
-    hash 0    # rjenkins1
-    item osd.0 weight 0.015
-    item osd.1 weight 0.015
-}
-host ceph02 {
-    id -3        # do not change unnecessarily
-    # weight 0.029
-    alg straw
-    hash 0    # rjenkins1
-    item osd.2 weight 0.015
-    item osd.3 weight 0.015
-}
-root default {
-    id -1        # do not change unnecessarily
-    # weight 0.058
-    alg straw
-    hash 0    # rjenkins1
-    item ceph01 weight 0.029
-    item ceph02 weight 0.029
-    item ceph03 weight 0.029
-}
-
-root root_ceph01 {
-    id -5        # do not change unnecessarily
-    # weight 0.029
-    alg straw
-    hash 0    # rjenkins1
-    item ceph01 weight 0.029
-}
-root root_ceph02 {
-    id -6        # do not change unnecessarily
-    # weight 0.029
-    alg straw
-    hash 0    # rjenkins1
-    item ceph02 weight 0.029
-}
-
-# rules
-rule replicated_ruleset {
-    ruleset 0
-    type replicated
-    min_size 1
-    max_size 10
-    step take default
-    step chooseleaf firstn 0 type host
-    step emit
-}
-rule main_is_ceph01 {
-    ruleset 1
-    type replicated
-    min_size 1
-    max_size 10
-    step take root_ceph01
-    step chooseleaf firstn 1 type host
-    step emit
-    step take root_ceph02
-    step chooseleaf firstn -1 type host
-    step emit
-}
-# end crush map
-</code></pre><h4 id="配置存储池"><a href="#配置存储池" class="headerlink" title="配置存储池"></a>配置存储池</h4><p>创建1个池</p>
-<pre><code>[root@ceph01 ~]# ceph osd pool create mainisceph01 64 64
- # 设置主本全部放在ceph01这个节点上
-[root@ceph01 ~]# ceph osd pool set mainisceph01 crush_ruleset 1
-</code></pre><h4 id="将池加入到cephfs的数据池集合"><a href="#将池加入到cephfs的数据池集合" class="headerlink" title="将池加入到cephfs的数据池集合"></a>将池加入到cephfs的数据池集合</h4><pre><code>[root@ceph01 ~]# ceph fs add_data_pool cephfs mainisceph01
-[root@ceph01 ~]# ceph fs ls
-name: cephfs, metadata pool: metadata, data pools: [data mainisceph01]
-</code></pre><h4 id="配置FILE-LAYOUTS"><a href="#配置FILE-LAYOUTS" class="headerlink" title="配置FILE LAYOUTS"></a>配置FILE LAYOUTS</h4><p>在ceph01节点上执行</p>
-<pre><code>[root@ceph01 ~]# setfattr -n ceph.dir.layout.pool -v mainisceph01 /mycephfs/cifs
-</code></pre><p>好了，这就配置好了，可以使用ceph osd map命令试试看对象的映射分布情况</p>
-<pre><code>[root@ceph01 ~]# for i in `seq 1 100`;do ceph osd map mainisceph01 obj$i;done
-osdmap e472 pool &apos;mainisceph01&apos; (17) object &apos;obj1&apos; -&gt; pg 17.6cf8deff (17.3f) -&gt; up ([0,3], p0) acting ([0,3], p0)
-osdmap e472 pool &apos;mainisceph01&apos; (17) object &apos;obj2&apos; -&gt; pg 17.3f1ee208 (17.8) -&gt; up ([0,2], p0) acting ([0,2], p0)
-osdmap e472 pool &apos;mainisceph01&apos; (17) object &apos;obj3&apos; -&gt; pg 17.61f68bb1 (17.31) -&gt; up ([0,2], p0) acting ([0,2], p0)
-osdmap e472 pool &apos;mainisceph01&apos; (17) object &apos;obj4&apos; -&gt; pg 17.a8759770 (17.30) -&gt; up ([0,3], p0) acting ([0,3], p0)
-osdmap e472 pool &apos;mainisceph01&apos; (17) object &apos;obj5&apos; -&gt; pg 17.666934a3 (17.23) -&gt; up ([0,2], p0) acting ([0,2], p0)
-···
-</code></pre><p>可以看到对象主本都是在osd.0上，osd.0是在ceph01上，这样读取数据的时候就不用去其他节点读取数据了，也就减少了数据在网络中的传输时间，从而提升读性能。</p>
-<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>最后我们把主要步骤整理下：</p>
-<ol>
-<li>修改crushmap，控制池里面对象的主副本分布；</li>
-<li>创建存储池并设置对应的rule；</li>
-<li>将存储池加入到cephfs的data池集合；</li>
-<li>KC上面对需要配置FILE LAYOUTS的目录设置对应的pool；</li>
-</ol>
-<p>前面也提到了，这种配置方式有一些限制，比如不能在多个KC上同时对同一个目录配置不同的pool（如果要实现需要自己改代码）。这里只是提供一种思路。实际测试读性能大概会提升40%左右。</p>
-
-      
-
-      
-    </div>
-    <div class="article-info article-info-index">
-      
-      
-      
-
-      
-        <p class="article-more-link">
-          <a class="article-more-a" href="/2021/02/24/cephfs性能优化之file layouts/">展开全文 >></a>
         </p>
       
 
