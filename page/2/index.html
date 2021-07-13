@@ -144,6 +144,258 @@
           <div id="js-content" class="content-ll">
             
   
+    <article id="post-解决一个部署osd时奇葩的报错问题" class="article article-type-post  article-index" itemscope itemprop="blogPost">
+  <div class="article-inner">
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="article-title" href="/2021/02/24/解决一个部署osd时奇葩的报错问题/">解决一个部署osd时奇葩的报错问题</a>
+    </h1>
+  
+
+        
+        <a href="/2021/02/24/解决一个部署osd时奇葩的报错问题/" class="archive-article-date">
+  	<time datetime="2021-02-24T11:52:14.552Z" itemprop="datePublished"><i class="icon-calendar icon"></i>2021-02-24</time>
+</a>
+        
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h2 id="故障现象"><a href="#故障现象" class="headerlink" title="故障现象"></a>故障现象</h2><p>ceph-deploy部署osd时如果不手动指定journal分区，让deploy自动去做journal分区就没问题，如果手动指定journal分区就会报错，过程如下：</p>
+<h3 id="prepare"><a href="#prepare" class="headerlink" title="prepare"></a>prepare</h3><p>prepare可以正常执行：</p>
+<pre><code>[root@wz_node86 ceph-deploy]# ceph-deploy osd prepare wz_node86:/dev/sdq2:/dev/sdq1
+[ceph_deploy.conf][DEBUG ] found configuration file at: /root/.cephdeploy.conf
+[ceph_deploy.cli][INFO  ] Invoked (1.5.33): /usr/bin/ceph-deploy osd prepare wz_node86:/dev/sdq2:/dev/sdq1
+[ceph_deploy.cli][INFO  ] ceph-deploy options:
+[ceph_deploy.cli][INFO  ]  username                      : None
+[ceph_deploy.cli][INFO  ]  disk                          : [(&apos;wz_node86&apos;, &apos;/dev/sdq2&apos;, &apos;/dev/sdq1&apos;)]
+[ceph_deploy.cli][INFO  ]  dmcrypt                       : False
+[ceph_deploy.cli][INFO  ]  verbose                       : False
+[ceph_deploy.cli][INFO  ]  bluestore                     : None
+[ceph_deploy.cli][INFO  ]  pushy                         : &lt;function connect at 0x1404050&gt;
+[ceph_deploy.cli][INFO  ]  overwrite_conf                : False
+[ceph_deploy.cli][INFO  ]  subcommand                    : prepare
+[ceph_deploy.cli][INFO  ]  dmcrypt_key_dir               : /etc/ceph/dmcrypt-keys
+[ceph_deploy.cli][INFO  ]  quiet                         : False
+[ceph_deploy.cli][INFO  ]  cd_conf                       : &lt;ceph_deploy.conf.cephdeploy.Conf instance at 0x19b0320&gt;
+[ceph_deploy.cli][INFO  ]  cluster                       : ceph
+[ceph_deploy.cli][INFO  ]  fs_type                       : xfs
+[ceph_deploy.cli][INFO  ]  func                          : &lt;function osd at 0x158eb18&gt;
+[ceph_deploy.cli][INFO  ]  ceph_conf                     : None
+[ceph_deploy.cli][INFO  ]  default_release               : False
+[ceph_deploy.cli][INFO  ]  zap_disk                      : False
+[ceph_deploy.osd][DEBUG ] Preparing cluster ceph disks wz_node86:/dev/sdq2:/dev/sdq1
+[wz_node86][DEBUG ] connected to host: wz_node86 
+[wz_node86][DEBUG ] detect platform information from remote host
+[wz_node86][DEBUG ] detect machine type
+[wz_node86][DEBUG ] find the location of an executable
+[ceph_deploy.osd][INFO  ] Distro info: CentOS 7.2.1511 Core
+[ceph_deploy.osd][DEBUG ] Deploying osd to wz_node86
+[wz_node86][DEBUG ] write cluster configuration to /etc/ceph/{cluster}.conf
+[ceph_deploy.osd][DEBUG ] Preparing host wz_node86 disk /dev/sdq2 journal /dev/sdq1 activate False
+[wz_node86][DEBUG ] find the location of an executable
+[wz_node86][INFO  ] Running command: /usr/sbin/ceph-disk -v prepare --cluster ceph --fs-type xfs -- /dev/sdq2 /dev/sdq1
+[wz_node86][WARNIN] command: Running command: /usr/bin/ceph-osd --cluster=ceph --show-config-value=fsid
+[wz_node86][WARNIN] command: Running command: /usr/bin/ceph-osd --check-allows-journal -i 0 --cluster ceph --setuser ceph --setgroup ceph
+[wz_node86][WARNIN] command: Running command: /usr/bin/ceph-osd --check-wants-journal -i 0 --cluster ceph --setuser ceph --setgroup ceph
+[wz_node86][WARNIN] command: Running command: /usr/bin/ceph-osd --check-needs-journal -i 0 --cluster ceph --setuser ceph --setgroup ceph
+[wz_node86][WARNIN] get_dm_uuid: get_dm_uuid /dev/sdq2 uuid path is /sys/dev/block/65:2/dm/uuid
+[wz_node86][WARNIN] command: Running command: /usr/bin/ceph-osd --cluster=ceph --show-config-value=osd_journal_size
+[wz_node86][WARNIN] get_dm_uuid: get_dm_uuid /dev/sdq2 uuid path is /sys/dev/block/65:2/dm/uuid
+[wz_node86][WARNIN] get_dm_uuid: get_dm_uuid /dev/sdq2 uuid path is /sys/dev/block/65:2/dm/uuid
+[wz_node86][WARNIN] command: Running command: /usr/bin/ceph-conf --cluster=ceph --name=osd. --lookup osd_mkfs_options_xfs
+[wz_node86][WARNIN] command: Running command: /usr/bin/ceph-conf --cluster=ceph --name=osd. --lookup osd_mount_options_xfs
+[wz_node86][WARNIN] get_dm_uuid: get_dm_uuid /dev/sdq1 uuid path is /sys/dev/block/65:1/dm/uuid
+[wz_node86][WARNIN] prepare_device: Journal /dev/sdq1 is a partition
+[wz_node86][WARNIN] get_dm_uuid: get_dm_uuid /dev/sdq1 uuid path is /sys/dev/block/65:1/dm/uuid
+[wz_node86][WARNIN] prepare_device: OSD will not be hot-swappable if journal is not the same device as the osd data
+[wz_node86][WARNIN] command: Running command: /usr/sbin/blkid -o udev -p /dev/sdq1
+[wz_node86][WARNIN] prepare_device: Journal /dev/sdq1 was not prepared with ceph-disk. Symlinking directly.
+[wz_node86][WARNIN] get_dm_uuid: get_dm_uuid /dev/sdq2 uuid path is /sys/dev/block/65:2/dm/uuid
+[wz_node86][WARNIN] set_data_partition: OSD data device /dev/sdq2 is a partition
+[wz_node86][WARNIN] get_dm_uuid: get_dm_uuid /dev/sdq2 uuid path is /sys/dev/block/65:2/dm/uuid
+[wz_node86][WARNIN] command: Running command: /usr/sbin/blkid -o udev -p /dev/sdq2
+[wz_node86][WARNIN] set_data_partition: incorrect partition UUID: 0fc63daf-8483-4772-8e79-3d69d8477de4, expected [&apos;4fbd7e29-9d25-41b8-afd0-5ec00ceff05d&apos;, &apos;4fbd7e29-9d25-41b8-afd0-062c0ceff05d&apos;, &apos;4fbd7e29-8ae0-4982-bf9d-5a8d867af560&apos;, &apos;4fbd7e29-9d25-41b8-afd0-35865ceff05d&apos;]
+[wz_node86][WARNIN] populate_data_path_device: Creating xfs fs on /dev/sdq2
+[wz_node86][WARNIN] command_check_call: Running command: /usr/sbin/mkfs -t xfs -f -i size=2048 -f -- /dev/sdq2
+[wz_node86][DEBUG ] meta-data=/dev/sdq2              isize=2048   agcount=6, agsize=268435455 blks
+[wz_node86][DEBUG ]          =                       sectsz=4096  attr=2, projid32bit=1
+[wz_node86][DEBUG ]          =                       crc=0        finobt=0
+[wz_node86][DEBUG ] data     =                       bsize=4096   blocks=1463819665, imaxpct=5
+[wz_node86][DEBUG ]          =                       sunit=0      swidth=0 blks
+[wz_node86][DEBUG ] naming   =version 2              bsize=4096   ascii-ci=0 ftype=0
+[wz_node86][DEBUG ] log      =internal log           bsize=4096   blocks=521728, version=2
+[wz_node86][DEBUG ]          =                       sectsz=4096  sunit=1 blks, lazy-count=1
+[wz_node86][DEBUG ] realtime =none                   extsz=4096   blocks=0, rtextents=0
+[wz_node86][WARNIN] mount: Mounting /dev/sdq2 on /var/lib/ceph/tmp/mnt.qlgXjP with options rw,noatime,inode64
+[wz_node86][WARNIN] command_check_call: Running command: /usr/bin/mount -t xfs -o rw,noatime,inode64 -- /dev/sdq2 /var/lib/ceph/tmp/mnt.qlgXjP
+[wz_node86][WARNIN] command: Running command: /usr/sbin/restorecon /var/lib/ceph/tmp/mnt.qlgXjP
+[wz_node86][WARNIN] populate_data_path: Preparing osd data dir /var/lib/ceph/tmp/mnt.qlgXjP
+[wz_node86][WARNIN] command: Running command: /usr/sbin/restorecon -R /var/lib/ceph/tmp/mnt.qlgXjP/ceph_fsid.671356.tmp
+[wz_node86][WARNIN] command: Running command: /usr/bin/chown -R ceph:ceph /var/lib/ceph/tmp/mnt.qlgXjP/ceph_fsid.671356.tmp
+[wz_node86][WARNIN] command: Running command: /usr/sbin/restorecon -R /var/lib/ceph/tmp/mnt.qlgXjP/fsid.671356.tmp
+[wz_node86][WARNIN] command: Running command: /usr/bin/chown -R ceph:ceph /var/lib/ceph/tmp/mnt.qlgXjP/fsid.671356.tmp
+[wz_node86][WARNIN] command: Running command: /usr/sbin/restorecon -R /var/lib/ceph/tmp/mnt.qlgXjP/magic.671356.tmp
+[wz_node86][WARNIN] command: Running command: /usr/bin/chown -R ceph:ceph /var/lib/ceph/tmp/mnt.qlgXjP/magic.671356.tmp
+[wz_node86][WARNIN] command: Running command: /usr/sbin/restorecon -R /var/lib/ceph/tmp/mnt.qlgXjP/journal_uuid.671356.tmp
+[wz_node86][WARNIN] command: Running command: /usr/bin/chown -R ceph:ceph /var/lib/ceph/tmp/mnt.qlgXjP/journal_uuid.671356.tmp
+[wz_node86][WARNIN] adjust_symlink: Creating symlink /var/lib/ceph/tmp/mnt.qlgXjP/journal -&gt; /dev/sdq1
+[wz_node86][WARNIN] command: Running command: /usr/sbin/restorecon -R /var/lib/ceph/tmp/mnt.qlgXjP
+[wz_node86][WARNIN] command: Running command: /usr/bin/chown -R ceph:ceph /var/lib/ceph/tmp/mnt.qlgXjP
+[wz_node86][WARNIN] unmount: Unmounting /var/lib/ceph/tmp/mnt.qlgXjP
+[wz_node86][WARNIN] command_check_call: Running command: /bin/umount -- /var/lib/ceph/tmp/mnt.qlgXjP
+[wz_node86][WARNIN] get_dm_uuid: get_dm_uuid /dev/sdq2 uuid path is /sys/dev/block/65:2/dm/uuid
+[wz_node86][INFO  ] checking OSD status...
+[wz_node86][DEBUG ] find the location of an executable
+[wz_node86][INFO  ] Running command: /bin/ceph --cluster=ceph osd stat --format=json
+[wz_node86][WARNIN] there is 1 OSD down
+[wz_node86][WARNIN] there is 1 OSD out
+[ceph_deploy.osd][DEBUG ] Host wz_node86 is now ready for osd use.
+</code></pre><h3 id="activate"><a href="#activate" class="headerlink" title="activate"></a>activate</h3><p>activate的时候报错如下：</p>
+<pre><code>[root@wz_node86 ceph-deploy]# ceph-deploy osd activate wz_node86:/dev/sdq2
+[ceph_deploy.conf][DEBUG ] found configuration file at: /root/.cephdeploy.conf
+[ceph_deploy.cli][INFO  ] Invoked (1.5.33): /usr/bin/ceph-deploy osd activate wz_node86:/dev/sdq2:/dev/sdq1
+[ceph_deploy.cli][INFO  ] ceph-deploy options:
+[ceph_deploy.cli][INFO  ]  username                      : None
+[ceph_deploy.cli][INFO  ]  verbose                       : False
+[ceph_deploy.cli][INFO  ]  pushy                         : &lt;function connect at 0xfc9050&gt;
+[ceph_deploy.cli][INFO  ]  overwrite_conf                : False
+[ceph_deploy.cli][INFO  ]  subcommand                    : activate
+[ceph_deploy.cli][INFO  ]  quiet                         : False
+[ceph_deploy.cli][INFO  ]  cd_conf                       : &lt;ceph_deploy.conf.cephdeploy.Conf instance at 0x1575320&gt;
+[ceph_deploy.cli][INFO  ]  cluster                       : ceph
+[ceph_deploy.cli][INFO  ]  func                          : &lt;function osd at 0x1153b18&gt;
+[ceph_deploy.cli][INFO  ]  ceph_conf                     : None
+[ceph_deploy.cli][INFO  ]  default_release               : False
+[ceph_deploy.cli][INFO  ]  disk                          : [(&apos;wz_node86&apos;, &apos;/dev/sdq2&apos;, &apos;/dev/sdq1&apos;)]
+[ceph_deploy.osd][DEBUG ] Activating cluster ceph disks wz_node86:/dev/sdq2:/dev/sdq1
+[wz_node86][DEBUG ] connected to host: wz_node86 
+[wz_node86][DEBUG ] detect platform information from remote host
+[wz_node86][DEBUG ] detect machine type
+[wz_node86][DEBUG ] find the location of an executable
+[ceph_deploy.osd][INFO  ] Distro info: CentOS 7.2.1511 Core
+[ceph_deploy.osd][DEBUG ] activating host wz_node86 disk /dev/sdq2
+[ceph_deploy.osd][DEBUG ] will use init type: systemd
+[wz_node86][DEBUG ] find the location of an executable
+[wz_node86][INFO  ] Running command: /usr/sbin/ceph-disk -v activate --mark-init systemd --mount /dev/sdq2
+[wz_node86][WARNIN] main_activate: path = /dev/sdq2
+[wz_node86][WARNIN] get_dm_uuid: get_dm_uuid /dev/sdq2 uuid path is /sys/dev/block/65:2/dm/uuid
+[wz_node86][WARNIN] command: Running command: /usr/sbin/blkid -o udev -p /dev/sdq2
+[wz_node86][WARNIN] command: Running command: /sbin/blkid -p -s TYPE -o value -- /dev/sdq2
+[wz_node86][WARNIN] command: Running command: /usr/bin/ceph-conf --cluster=ceph --name=osd. --lookup osd_mount_options_xfs
+[wz_node86][WARNIN] mount: Mounting /dev/sdq2 on /var/lib/ceph/tmp/mnt.XLOFBd with options rw,noatime,inode64
+[wz_node86][WARNIN] command_check_call: Running command: /usr/bin/mount -t xfs -o rw,noatime,inode64 -- /dev/sdq2 /var/lib/ceph/tmp/mnt.XLOFBd
+[wz_node86][WARNIN] command: Running command: /usr/sbin/restorecon /var/lib/ceph/tmp/mnt.XLOFBd
+[wz_node86][WARNIN] activate: Cluster uuid is 03069551-6d93-4600-96ad-63da5a862809
+[wz_node86][WARNIN] command: Running command: /usr/bin/ceph-osd --cluster=ceph --show-config-value=fsid
+[wz_node86][WARNIN] activate: Cluster name is ceph
+[wz_node86][WARNIN] activate: OSD uuid is dd0b0be6-aab1-471c-9039-a240498fb696
+[wz_node86][WARNIN] activate: OSD id is 0
+[wz_node86][WARNIN] activate: Initializing OSD...
+[wz_node86][WARNIN] command_check_call: Running command: /usr/bin/ceph --cluster ceph --name client.bootstrap-osd --keyring /var/lib/ceph/bootstrap-osd/ceph.keyring mon getmap -o /var/lib/ceph/tmp/mnt.XLOFBd/activate.monmap
+[wz_node86][WARNIN] got monmap epoch 3
+[wz_node86][WARNIN] command_check_call: Running command: /usr/bin/ceph-osd --cluster ceph --mkfs --mkkey -i 0 --monmap /var/lib/ceph/tmp/mnt.XLOFBd/activate.monmap --osd-data /var/lib/ceph/tmp/mnt.XLOFBd --osd-journal /var/lib/ceph/tmp/mnt.XLOFBd/journal --osd-uuid dd0b0be6-aab1-471c-9039-a240498fb696 --keyring /var/lib/ceph/tmp/mnt.XLOFBd/keyring --setuser ceph --setgroup ceph
+[wz_node86][WARNIN] 2019-05-14 18:10:02.783268 7f3ac70ae800 -1 journal check: ondisk fsid 00000000-0000-0000-0000-000000000000 doesn&apos;t match expected dd0b0be6-aab1-471c-9039-a240498fb696, invalid (someone else&apos;s?) journal
+[wz_node86][WARNIN] 2019-05-14 18:10:02.783695 7f3ac70ae800 -1 journal FileJournal::_open: unable to setup io_context (0) Success
+[wz_node86][WARNIN] 2019-05-14 18:10:02.783747 7f3ac70ae800 -1 journal FileJournal::create : create write header error (9) Bad file descriptor
+[wz_node86][WARNIN] 2019-05-14 18:10:02.783761 7f3ac70ae800 -1 journal FileJournal::create: error closing fd: (9) Bad file descriptor
+[wz_node86][WARNIN] 2019-05-14 18:10:02.783813 7f3ac70ae800 -1 filestore(/var/lib/ceph/tmp/mnt.XLOFBd) mkjournal error creating journal on /var/lib/ceph/tmp/mnt.XLOFBd/journal: (9) Bad file descriptor
+[wz_node86][WARNIN] 2019-05-14 18:10:02.783864 7f3ac70ae800 -1 OSD::mkfs: ObjectStore::mkfs failed with error -9
+[wz_node86][WARNIN] 2019-05-14 18:10:02.783938 7f3ac70ae800 -1  ** ERROR: error creating empty object store in /var/lib/ceph/tmp/mnt.XLOFBd: (9) Bad file descriptor
+[wz_node86][WARNIN] mount_activate: Failed to activate
+[wz_node86][WARNIN] unmount: Unmounting /var/lib/ceph/tmp/mnt.XLOFBd
+[wz_node86][WARNIN] command_check_call: Running command: /bin/umount -- /var/lib/ceph/tmp/mnt.XLOFBd
+[wz_node86][WARNIN] Traceback (most recent call last):
+[wz_node86][WARNIN]   File &quot;/usr/sbin/ceph-disk&quot;, line 9, in &lt;module&gt;
+[wz_node86][WARNIN]     load_entry_point(&apos;ceph-disk==1.0.0&apos;, &apos;console_scripts&apos;, &apos;ceph-disk&apos;)()
+[wz_node86][WARNIN]   File &quot;/usr/lib/python2.7/site-packages/ceph_disk/main.py&quot;, line 4970, in run
+[wz_node86][WARNIN]     main(sys.argv[1:])
+[wz_node86][WARNIN]   File &quot;/usr/lib/python2.7/site-packages/ceph_disk/main.py&quot;, line 4921, in main
+[wz_node86][WARNIN]     args.func(args)
+[wz_node86][WARNIN]   File &quot;/usr/lib/python2.7/site-packages/ceph_disk/main.py&quot;, line 3275, in main_activate
+[wz_node86][WARNIN]     reactivate=args.reactivate,
+[wz_node86][WARNIN]   File &quot;/usr/lib/python2.7/site-packages/ceph_disk/main.py&quot;, line 3032, in mount_activate
+[wz_node86][WARNIN]     (osd_id, cluster) = activate(path, activate_key_template, init)
+[wz_node86][WARNIN]   File &quot;/usr/lib/python2.7/site-packages/ceph_disk/main.py&quot;, line 3208, in activate
+[wz_node86][WARNIN]     keyring=keyring,
+[wz_node86][WARNIN]   File &quot;/usr/lib/python2.7/site-packages/ceph_disk/main.py&quot;, line 2701, in mkfs
+[wz_node86][WARNIN]     &apos;--setgroup&apos;, get_ceph_group(),
+[wz_node86][WARNIN]   File &quot;/usr/lib/python2.7/site-packages/ceph_disk/main.py&quot;, line 439, in command_check_call
+[wz_node86][WARNIN]     return subprocess.check_call(arguments)
+[wz_node86][WARNIN]   File &quot;/usr/lib64/python2.7/subprocess.py&quot;, line 542, in check_call
+[wz_node86][WARNIN]     raise CalledProcessError(retcode, cmd)
+[wz_node86][WARNIN] subprocess.CalledProcessError: Command &apos;[&apos;/usr/bin/ceph-osd&apos;, &apos;--cluster&apos;, &apos;ceph&apos;, &apos;--mkfs&apos;, &apos;--mkkey&apos;, &apos;-i&apos;, &apos;0&apos;, &apos;--monmap&apos;, &apos;/var/lib/ceph/tmp/mnt.XLOFBd/activate.monmap&apos;, &apos;--osd-data&apos;, &apos;/var/lib/ceph/tmp/mnt.XLOFBd&apos;, &apos;--osd-journal&apos;, &apos;/var/lib/ceph/tmp/mnt.XLOFBd/journal&apos;, &apos;--osd-uuid&apos;, &apos;dd0b0be6-aab1-471c-9039-a240498fb696&apos;, &apos;--keyring&apos;, &apos;/var/lib/ceph/tmp/mnt.XLOFBd/keyring&apos;, &apos;--setuser&apos;, &apos;ceph&apos;, &apos;--setgroup&apos;, &apos;ceph&apos;]&apos; returned non-zero exit status 1
+[wz_node86][ERROR ] RuntimeError: command returned non-zero exit status: 1
+[ceph_deploy][ERROR ] RuntimeError: Failed to execute command: /usr/sbin/ceph-disk -v activate --mark-init systemd --mount /dev/sdq2
+</code></pre><h2 id="分析解决"><a href="#分析解决" class="headerlink" title="分析解决"></a>分析解决</h2><p>关键的错误日志如下：</p>
+<pre><code>[wz_node86][WARNIN] command_check_call: Running command: /usr/bin/ceph-osd --cluster ceph --mkfs --mkkey -i 0 --monmap /var/lib/ceph/tmp/mnt.XLOFBd/activate.monmap --osd-data /var/lib/ceph/tmp/mnt.XLOFBd --osd-journal /var/lib/ceph/tmp/mnt.XLOFBd/journal --osd-uuid dd0b0be6-aab1-471c-9039-a240498fb696 --keyring /var/lib/ceph/tmp/mnt.XLOFBd/keyring --setuser ceph --setgroup ceph
+[wz_node86][WARNIN] 2019-05-14 18:10:02.783268 7f3ac70ae800 -1 journal check: ondisk fsid 00000000-0000-0000-0000-000000000000 doesn&apos;t match expected dd0b0be6-aab1-471c-9039-a240498fb696, invalid (someone else&apos;s?) journal
+[wz_node86][WARNIN] 2019-05-14 18:10:02.783695 7f3ac70ae800 -1 journal FileJournal::_open: unable to setup io_context (0) Success
+[wz_node86][WARNIN] 2019-05-14 18:10:02.783747 7f3ac70ae800 -1 journal FileJournal::create : create write header error (9) Bad file descriptor
+[wz_node86][WARNIN] 2019-05-14 18:10:02.783761 7f3ac70ae800 -1 journal FileJournal::create: error closing fd: (9) Bad file descriptor
+[wz_node86][WARNIN] 2019-05-14 18:10:02.783813 7f3ac70ae800 -1 filestore(/var/lib/ceph/tmp/mnt.XLOFBd) mkjournal error creating journal on /var/lib/ceph/tmp/mnt.XLOFBd/journal: (9) Bad file descriptor
+[wz_node86][WARNIN] 2019-05-14 18:10:02.783864 7f3ac70ae800 -1 OSD::mkfs: ObjectStore::mkfs failed with error -9
+[wz_node86][WARNIN] 2019-05-14 18:10:02.783938 7f3ac70ae800 -1  ** ERROR: error creating empty object store in /var/lib/ceph/tmp/mnt.XLOFBd: (9) Bad file descriptor
+</code></pre><p>看到错误日志开始怀疑是journal分区没有清理干净，导致prepare的时候没有正确配置journal导致的，但是使用ceph-disk zap和 sgdisk -z把磁盘都清理干净了还是不行。然后根据错误日志查找相关代码，看到osd在启动的时候读取journal分区的如下代码：</p>
+<pre><code>if (aio) {
+    aio_ctx = 0;
+    ret = io_setup(128, &amp;aio_ctx);
+    if (ret &lt; 0) {
+      ret = errno;
+      derr &lt;&lt; &quot;FileJournal::_open: unable to setup io_context &quot; &lt;&lt; cpp_strerror(ret) &lt;&lt; dendl;
+      ret = -ret;
+      goto out_fd;
+    }
+  }
+</code></pre><p>可以看到如果osd的journal是单独的分区时，osd是使用aio的方式去open journal的，然后查资料找到了应该内核限制了aio的请求数。然后增加下面的内核参数：</p>
+<pre><code>echo 131072 &gt; /proc/sys/fs/aio-max-nr
+</code></pre><p>这个参数在centos 7.2里面默认是65536，在7.6里面把这个参数增加到了1048576。推测后面应用软件会大量使用aio的方式来优化性能，所以可以适当的增加该内核参数。</p>
+<p>好了，问题解决了，可以正常部署osd了。</p>
+
+      
+
+      
+    </div>
+    <div class="article-info article-info-index">
+      
+      
+      
+
+      
+        <p class="article-more-link">
+          <a class="article-more-a" href="/2021/02/24/解决一个部署osd时奇葩的报错问题/">展开全文 >></a>
+        </p>
+      
+
+      
+      <div class="clearfix"></div>
+    </div>
+  </div>
+</article>
+
+<aside class="wrap-side-operation">
+    <div class="mod-side-operation">
+        
+        <div class="jump-container" id="js-jump-container" style="display:none;">
+            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
+                <i class="icon-font icon-back"></i>
+            </a>
+            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
+                <i class="icon-font icon-plane jump-plane"></i>
+            </div>
+        </div>
+        
+        
+    </div>
+</aside>
+
+
+
+
+  
     <article id="post-集群osd full错误处理" class="article article-type-post  article-index" itemscope itemprop="blogPost">
   <div class="article-inner">
     
@@ -2293,252 +2545,6 @@ An error occurred (NoSuchKey) when calling the GetObject operation: Unknown
       
         <p class="article-more-link">
           <a class="article-more-a" href="/2021/02/24/RGW对象版本控制（多版本）/">展开全文 >></a>
-        </p>
-      
-
-      
-      <div class="clearfix"></div>
-    </div>
-  </div>
-</article>
-
-<aside class="wrap-side-operation">
-    <div class="mod-side-operation">
-        
-        <div class="jump-container" id="js-jump-container" style="display:none;">
-            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
-                <i class="icon-font icon-back"></i>
-            </a>
-            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
-                <i class="icon-font icon-plane jump-plane"></i>
-            </div>
-        </div>
-        
-        
-    </div>
-</aside>
-
-
-
-
-  
-    <article id="post-rgw lifecycle功能理解" class="article article-type-post  article-index" itemscope itemprop="blogPost">
-  <div class="article-inner">
-    
-      <header class="article-header">
-        
-  
-    <h1 itemprop="name">
-      <a class="article-title" href="/2021/02/24/rgw lifecycle功能理解/">rgw：lifecycle功能理解</a>
-    </h1>
-  
-
-        
-        <a href="/2021/02/24/rgw lifecycle功能理解/" class="archive-article-date">
-  	<time datetime="2021-02-24T11:52:13.109Z" itemprop="datePublished"><i class="icon-calendar icon"></i>2021-02-24</time>
-</a>
-        
-      </header>
-    
-    <div class="article-entry" itemprop="articleBody">
-      
-        <h2 id="1、介绍"><a href="#1、介绍" class="headerlink" title="1、介绍"></a>1、介绍</h2><p>rgw lifecycle功能，也叫rgw生命周期功能，简单的理解就是我们对rgw bucket设置一个策略，这个策略规定bucket里面的数据何时过期，从而将过期的对象删掉或转移到其他地方。</p>
-<blockquote>
-<p>目前12版本只支持将到期的数据对象删除掉，后面可能会增加把到期的数据对象转移到其他地方（比如N版里面加入的STORAGE CLASS功能）。</p>
-</blockquote>
-<h2 id="2、配置"><a href="#2、配置" class="headerlink" title="2、配置"></a>2、配置</h2><p><strong>重点：目前只能通过在rgw客户端使用api针对bucket设置（lifecycle规则作用在bucket上），只对该bucket里面的数据对象生效。管理侧（比如radosgw-admin）不支持设置bucket lc。</strong></p>
-<p>下面使用python3的boto3库来设置（使用s3cmd setlifecycle命令也可以），提前准备好一个rgw用户，并使用这个用户创建一个名为bk01的bucket。</p>
-<p>设置lifecycle脚本内容：</p>
-<pre><code>[root@ceph01 ~]# cat lc.py 
-import boto3
-
-endpoint = &quot;http://192.168.10.31:9001&quot;    # rgw的访问地址
-key = &quot;NJ2VSBLRJ8Q7S0UYCWXE&quot;    # rgw用户的access key
-secret = &quot;ElqXBaBsGOGDfzhRv4jBg9CXhY6xRAsv6A0A0Ru8&quot;    # rgw用户的secret key
-bucket = &quot;bk01&quot;    # rgw bucket名称
-
-s3 = boto3.client(&apos;s3&apos;, aws_access_key_id=key, aws_secret_access_key=secret, endpoint_url=endpoint)
-rule = {
-          &apos;Rules&apos;: [{                    #  设置过期规则部分
-               &apos;Expiration&apos;: {        
-                    &apos;Days&apos;: 1                # 过期时间，只能以天为单位
-                },
-                &apos;ID&apos;: &apos;delete-anythings-after-one-day&apos;,     # 唯一的id，也可以使用一些字符串来说明此规则的大致含义
-                &apos;Status&apos;: &apos;Enabled&apos;,    
-                &apos;Prefix&apos;: &apos;&apos;                      # 对象的前缀，空字符串表示对所有对象起作用
-         }],
-}
-s3.put_bucket_lifecycle(Bucket=bucket, LifecycleConfiguration=rule)
-print(s3.get_bucket_lifecycle(Bucket=dev_bucket))
-</code></pre><p>执行脚本：</p>
-<pre><code>[root@ceph01 ~]# python3 lc.py 
-{&apos;ResponseMetadata&apos;: {&apos;RequestId&apos;: &apos;tx00000000000000000004e-005ebb6bad-3729-default&apos;, &apos;HostId&apos;: &apos;&apos;, &apos;HTTPStatusCode&apos;: 200, &apos;HTTPHeaders&apos;: {&apos;x-amz-request-id&apos;: &apos;tx00000000000000000004e-005ebb6bad-3729-default&apos;, &apos;content-type&apos;: &apos;application/xml&apos;, &apos;content-length&apos;: &apos;250&apos;, &apos;date&apos;: &apos;Wed, 13 May 2020 03:38:21 GMT&apos;}, &apos;RetryAttempts&apos;: 0}, &apos;Rules&apos;: [{&apos;Expiration&apos;: {&apos;Days&apos;: 1}, &apos;ID&apos;: &apos;delete-anythings-after-one-day&apos;, &apos;Prefix&apos;: &apos;&apos;, &apos;Status&apos;: &apos;Enabled&apos;}]}
-</code></pre><p>其中 ‘HTTPStatusCode’: 200表示设置成功。</p>
-<p>注意：一个bucket对于相同的规则只支持设置一次，比如：</p>
-<pre><code>[    #  设置过期规则部分
-    {                    
-                   &apos;Expiration&apos;: {        
-                        &apos;Days&apos;: 1                                # 过期时间，只能以天为单位
-                    },
-                    &apos;ID&apos;: &apos;delete-anythings-after-one-day&apos;,     # 唯一的id，也可以使用一些字符串来说明此规则的大致含义
-                    &apos;Status&apos;: &apos;Enabled&apos;,    
-                    &apos;Prefix&apos;: &apos;&apos;                                  # 对象的前缀，空字符串表示对所有对象起作用
-    },
-    {                    
-                   &apos;Expiration&apos;: {        
-                        &apos;Days&apos;: 2                                # 过期时间，只能以天为单位
-                    },
-                    &apos;ID&apos;: &apos;delete-anythings-after-two-day&apos;,     # 唯一的id，也可以使用一些字符串来说明此规则的大致含义
-                    &apos;Status&apos;: &apos;Enabled&apos;,    
-                    &apos;Prefix&apos;: &apos;&apos;                                  # 对象的前缀，空字符串表示对所有对象起作用
-    },
-]
-</code></pre><p>这个rule就是有问题的，因为该rule要求1天之后对象过期，又要求对象两天之后过期，冲突了。</p>
-<p><strong>增加筛选对象过滤条件</strong></p>
-<p>通过Filter字段来实现：</p>
-<pre><code>rule = {
-         &apos;Rules&apos;: [{
-            &apos;Expiration&apos;: {        
-                    &apos;Days&apos;: 1
-               },
-            &apos;ID&apos;: &apos;delete-anythings-after-one-day&apos;, 
-            &apos;Filter&apos;: {    // 筛选对象的过滤条件
-                       &apos;Tag&apos;: {    
-                            // 这里的tag表示rgw数据对象的tagging，也可以通过api去设置和获取，存储在其head对象的xattr中
-                            // 后续lc进程执行的时候，就会结合Prefix和Tag的设置，来判断对象是否符合该条件，不符合就会跳过
-                             &apos;Key&apos;: &apos;color&apos;,
-                             &apos;Value&apos;: &apos;red&apos;
-                         }
-                   },
-              &apos;Status&apos;: &apos;Enabled&apos;,    
-              &apos;Prefix&apos;: &apos;&apos;
-         }],
-}
-</code></pre><p>在N版之前使用tagging来筛选对象有个问题：比如有两个rule，rule1规定包含tag1:val1的对象在1天之后被删除，rule2规定包含tag2:val2的对象在2天之后被转移到其他地方。如果有一个对象同时包含tag1:val1和tag2:val2这两个tagging，那lc线程的行为会让人比较迷惑，这个pr：<a href="https://github.com/ceph/ceph/pull/35002/files，规定了只有full" target="_blank" rel="noopener">https://github.com/ceph/ceph/pull/35002/files，规定了只有full</a> match tagging时才执行对应的操作（删除或转移）。</p>
-<h2 id="3、查看-删除"><a href="#3、查看-删除" class="headerlink" title="3、查看/删除"></a>3、查看/删除</h2><p>查看lifecycle接口：</p>
-<pre><code>s3.get_bucket_lifecycle(Bucket=dev_bucket)
-</code></pre><p>删除lifecycle接口：</p>
-<pre><code>s3.delete_bucket_lifecycle(Bucket=dev_bucket)
-</code></pre><p><strong>注意：因为lifecycle删除对象是周期行执行的，删除后，则在下一个周期生效。
-</strong></p>
-<p>下面说明从rados层面如何查看bucket lifecycle：</p>
-<p>1、查看bucket对应的rados对象：</p>
-<pre><code>[root@ceph06 ~]# rados -p default.rgw.meta --namespace=root ls
-.bucket.meta.bk01:d9498785-8e81-41bb-aee5-312670bc75a9.14130.1
-</code></pre><p>2、bucket的lc信息存在其rados对象的xattr中，key值为user.rgw.lc：</p>
-<pre><code>[root@ceph06 ~]# rados -p default.rgw.meta --namespace root listxattr .bucket.meta.bk01:d9498785-8e81-41bb-aee5-312670bc75a9.14130.1
-user.rgw.lc
-</code></pre><p>3、从bucket的rados对象中获取其lc信息：</p>
-<pre><code>[root@ceph06 ~]# rados -p default.rgw.meta --namespace root getxattr .bucket.meta.bk01:d9498785-8e81-41bb-aee5-312670bc75a9.14130.1 user.rgw.lc &gt; lc
-</code></pre><p>4、解码lc信息：</p>
-<pre><code>[root@ceph06 ~]# ceph-dencoder type RGWLifecycleConfiguration import lc decode dump_json
-{
-    &quot;prefix_map&quot;: {
-        &quot;&quot;: {
-            &quot;status&quot;: true,
-            &quot;dm_expiration&quot;: false,
-            &quot;expiration&quot;: 1,
-            &quot;noncur_expiration&quot;: 0,
-            &quot;mp_expiration&quot;: 0
-        }
-    },
-    &quot;rule_map&quot;: [
-        {
-            &quot;id&quot;: &quot;delete-anythings-after-one-day&quot;,
-            &quot;rule&quot;: {
-                &quot;id&quot;: &quot;delete-anythings-after-one-day&quot;,
-                &quot;prefix&quot;: &quot;&quot;,
-                &quot;status&quot;: &quot;Enabled&quot;,
-                &quot;expiration&quot;: {
-                    &quot;days&quot;: &quot;1&quot;,
-                    &quot;date&quot;: &quot;&quot;
-                },
-                &quot;noncur_expiration&quot;: {
-                    &quot;days&quot;: &quot;&quot;,
-                    &quot;date&quot;: &quot;&quot;
-                },
-                &quot;mp_expiration&quot;: {
-                    &quot;days&quot;: &quot;&quot;,
-                    &quot;date&quot;: &quot;&quot;
-                },
-                &quot;filter&quot;: {
-                    &quot;prefix&quot;: &quot;&quot;,
-                    &quot;obj_tags&quot;: {}
-                },
-                &quot;dm_expiration&quot;: false
-            }
-        }
-    ]
-}
-</code></pre><p>看到bucket的lifecycle已经设置成功。上面是设置和查看bucket lc的过程，其中从rados层面去查看某个bucket的lifecycle配置步骤还是有点麻烦的。从管理层面现在貌似没法直接查看，因为radosgw-admin只提供了两个相关命令：</p>
-<pre><code>lc list                        list all bucket lifecycle progress
-lc process                     manually process lifecycle
-</code></pre><h2 id="4、执行原理"><a href="#4、执行原理" class="headerlink" title="4、执行原理"></a>4、执行原理</h2><p>在default.rgw.log池里面有N个lc相关的rados对象，N由配置rgw_lc_max_objs指定，默认值是32。</p>
-<pre><code>[root@ceph06 ~]# rados -p default.rgw.log --namespace=lc ls
-lc.6
-···
-lc.1
-lc.0
-</code></pre><p>所有设置了lifecycle的bucket，会保存在这些rados对象的omap中。分配的规则是bucket名称hash和lc对象数取模。bk01被分配到了lc.10这个rados对象中，注意每个lc rados对象可以被分别多个bucket。</p>
-<pre><code>[root@ceph06 ~]# rados -p default.rgw.log --namespace=lc listomapkeys lc.10
-:bk01:d9498785-8e81-41bb-aee5-312670bc75a9.14130.1
-</code></pre><p>每个lc rados对象的omap header中记录了自己负责的，将要执行的lifecycle的bucket信息：</p>
-<pre><code>[root@ceph06 ~]# rados -p default.rgw.log --namespace=lc getomapheader lc.10
-header (0 bytes) :
-</code></pre><p>看到当前没有正在执行lc的bucket。</p>
-<p>手动执行lc process：</p>
-<pre><code>[root@ceph06 ~]# radosgw-admin lc process
-</code></pre><p>lifecycle执行过程：</p>
-<ol>
-<li>设置lc执行线程最大运行时间，由配置rgw_lc_lock_max_time指定，默认60s。</li>
-<li>给所选的lc对象上锁，这个lc对象是随机选择的。</li>
-<li>从lc对象里面获取需要执行lifecycle的bucket。</li>
-<li>更新bucket的lc状态为lc_processing。</li>
-<li>更新lc对象的omap header。</li>
-<li>开始遍历bucket中的所有对象的元数据，把符合条件的对象删除或转移。</li>
-<li>计算下一次进入lc的时间。</li>
-</ol>
-<p>查看bucket lc的状态：</p>
-<pre><code>[root@ceph06 ~]# radosgw-admin lc list
-[
-    {
-        &quot;bucket&quot;: &quot;:bk01:d9498785-8e81-41bb-aee5-312670bc75a9.14130.1&quot;,
-        &quot;status&quot;: &quot;UNINITIAL&quot;
-    },
-    {
-        &quot;bucket&quot;: &quot;:bk02:d9498785-8e81-41bb-aee5-312670bc75a9.14130.2&quot;,
-        &quot;status&quot;: &quot;UNINITIAL&quot;
-    }
-]
-</code></pre><p>其中bucket的lc状态有四种：</p>
-<pre><code>UNINITIAL 未初始化
-PROCESSING 进行中
-FAILED 失败
-COMPLETE 完成
-</code></pre><p>lifecycle相关的参数：</p>
-<pre><code>rgw_lifecycle_work_time = &quot;00:00-6:00&quot;        执行lc时间窗口
-rgw_enable_lc_threads = true                允许启动lc线程，设置false表示关闭lc功能
-rgw_lc_lock_max_time = 60                某个lc线程每次可以执行的总时间，超过该时间没执行完，就等下次执行
-rgw_lc_max_objs = 32                    lc rados对象个数
-rgw_lc_max_rules = 1000                一个bucket可以设置的rule数
-rgw_lc_debug_interval = -1                这个参数很关键，&gt;0时，会忽略设置的时间窗口去执行，立即执行，并且此时设置的过期天数，1天等于1s，也就是说你设置7天后过期，此时表示7s后过期。&lt;=0时，则按照正常的来执行。该配置主要为了方便调试lc。
-</code></pre><p>注：<br>当数据量非常大的时候，上面说了因为是随机选择lc对象，遍历对比，所以可能有的对象没有在规定时间内删除完成，比如设置1天后过期的对象，可能会在2、3天后才删除，这个是正常的。在就是lifecycle执行过程中会对index pool的读取流量非常高，lc对系统资源消耗也比较大。</p>
-<p>参考：</p>
-<p><a href="https://medium.com/@spaz_44123/creating-an-intelligent-object-storage-system-with-cephs-object-lifecycle-management-112e2e46d490" target="_blank" rel="noopener">https://medium.com/@spaz_44123/creating-an-intelligent-object-storage-system-with-cephs-object-lifecycle-management-112e2e46d490</a></p>
-<p><a href="https://www.dovefi.com/post/ceph_rgw_bucket_lifecycle/" target="_blank" rel="noopener">https://www.dovefi.com/post/ceph_rgw_bucket_lifecycle/</a></p>
-
-      
-
-      
-    </div>
-    <div class="article-info article-info-index">
-      
-      
-      
-
-      
-        <p class="article-more-link">
-          <a class="article-more-a" href="/2021/02/24/rgw lifecycle功能理解/">展开全文 >></a>
         </p>
       
 

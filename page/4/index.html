@@ -144,6 +144,78 @@
           <div id="js-content" class="content-ll">
             
   
+    <article id="post-ceph三种客户端消息到rados的路径" class="article article-type-post  article-index" itemscope itemprop="blogPost">
+  <div class="article-inner">
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="article-title" href="/2021/02/24/ceph三种客户端消息到rados的路径/">ceph三种客户端消息到rados的路径</a>
+    </h1>
+  
+
+        
+        <a href="/2021/02/24/ceph三种客户端消息到rados的路径/" class="archive-article-date">
+  	<time datetime="2021-02-24T11:52:11.213Z" itemprop="datePublished"><i class="icon-calendar icon"></i>2021-02-24</time>
+</a>
+        
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <p>这里主要想将ceph三种客户端(FS/RBD/RGW)，在和ceph rados通信时经过了哪些模块简单描述下。</p>
+<h3 id="结构图"><a href="#结构图" class="headerlink" title="结构图"></a>结构图</h3><p>先上图(虽然画的有点丑…)，ceph官网上虽然有类似的架构图，但是画的有点太抽象了。不是很具体，这里稍微稍微的详细点吧？！</p>
+<img src="/2021/02/24/ceph三种客户端消息到rados的路径/msg_path.png" title="msg_path">
+<h5 id="说明"><a href="#说明" class="headerlink" title="说明"></a>说明</h5><h5 id="RGW"><a href="#RGW" class="headerlink" title="RGW"></a>RGW</h5><p>RGW相对简单些，应用层直接通过<code>librgw</code>调用<code>librados</code>提供的接口，然后到达rados。没有什么好特别说明的。</p>
+<h5 id="RBD"><a href="#RBD" class="headerlink" title="RBD"></a>RBD</h5><p>RBD有两种方式将消息发送到rados层：</p>
+<p>1.和<code>librgw</code>一样，应用层通过<code>librbd</code>调用<code>librados</code>提供的接口，将消息送达至rados层。</p>
+<p>2.<code>rbd.ko</code> 它是一个内核模块，在该内核模块里面自己实现了类似osdc的功能，然后直接使用rados protocol和rados进行通信。</p>
+<h5 id="RGW-1"><a href="#RGW-1" class="headerlink" title="RGW"></a>RGW</h5><p>fs也有两种方式将消息送达到rados层：</p>
+<p>1.<code>libcephfs</code> 看到lib这几个字母，是不是会认为它也是通过调用<code>librados</code>和raods进行通信的，其实在<code>libcephfs</code>内部自己也实现了osdc的功能，它不用调用<code>librados</code>，而直接和rados通信。</p>
+<p>2.<code>ceph.ko</code> 它也是一个内核模块，它调用<code>libceph.ko</code>内核模块和rados进行通信。</p>
+
+      
+
+      
+    </div>
+    <div class="article-info article-info-index">
+      
+      
+      
+
+      
+        <p class="article-more-link">
+          <a class="article-more-a" href="/2021/02/24/ceph三种客户端消息到rados的路径/">展开全文 >></a>
+        </p>
+      
+
+      
+      <div class="clearfix"></div>
+    </div>
+  </div>
+</article>
+
+<aside class="wrap-side-operation">
+    <div class="mod-side-operation">
+        
+        <div class="jump-container" id="js-jump-container" style="display:none;">
+            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
+                <i class="icon-font icon-back"></i>
+            </a>
+            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
+                <i class="icon-font icon-plane jump-plane"></i>
+            </div>
+        </div>
+        
+        
+    </div>
+</aside>
+
+
+
+
+  
     <article id="post-cephfs性能优化之file layouts" class="article article-type-post  article-index" itemscope itemprop="blogPost">
   <div class="article-inner">
     

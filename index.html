@@ -144,6 +144,109 @@
           <div id="js-content" class="content-ll">
             
   
+    <article id="post-rgw：数据加密" class="article article-type-post  article-index" itemscope itemprop="blogPost">
+  <div class="article-inner">
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h2 id="rgw数据加密"><a href="#rgw数据加密" class="headerlink" title="rgw数据加密"></a>rgw数据加密</h2><p>rgw网关收到客户端的数据后，先对数据进行加密，然后再存到rados集群里面。同理，读取数据的时候，rgw先进行解密，然后再发送给客户端。数据加解密的过程都是在rgw里面完成，此时rgw需要加解密的密钥和对应的算法。</p>
+<p>ceph rgw（v12.2.12）里面按保存加密密钥的方式，分为两种情况：</p>
+<p>1、由客户端负责指定加密密钥，当前仅支持AES256加密算法；</p>
+<p>2、由rgw网关负责指定加密密钥，所有网关实例共用此密钥；</p>
+<p>如果客户端上传、下载时指定了密钥的同时，rgw网关也配置了加密密钥，优先使用客户端指定的密钥进行数据加解密。</p>
+<h2 id="加密密钥保存在客户端"><a href="#加密密钥保存在客户端" class="headerlink" title="加密密钥保存在客户端"></a>加密密钥保存在客户端</h2><p>也就是客户端自己负责密钥的管理，rgw不负责保存。每次上传、下载数据的时候都需要指定加密密钥和加密算法。</p>
+<p><strong>上传下载对象例子</strong></p>
+<p><code>[root@ceph03 ~]# cat put.py</code></p>
+<p><code>import boto3</code></p>
+<p><code>import os</code></p>
+<p><code>BUCKET = &#39;bk01&#39;</code></p>
+<p><code>KEY = os.urandom(32)</code></p>
+<p><code>s3 = boto3.client(&#39;s3&#39;, endpoint_url=&quot;http://192.168.10.20:7480&quot;)</code></p>
+<p><code>s3.put_object(Bucket=BUCKET,</code></p>
+<p>​              <code>Key=&#39;foobar&#39;, Body=b&#39;foobar&#39;,</code></p>
+<p>​              <code>SSECustomerKey=KEY,</code></p>
+<p>​              <code>SSECustomerAlgorithm=&#39;AES256&#39;)</code></p>
+<p><code>print(&quot;put done&quot;)</code></p>
+<p><code>print(&quot;getting object&quot;)</code> </p>
+<p><code>response = s3.get_object(Bucket=BUCKET,                         Key=&#39;foobar&#39;,                         SSECustomerKey=KEY,                         SSECustomerAlgorithm=&#39;AES256&#39;) print(response[&#39;Body&#39;].read())</code></p>
+<h2 id="加密密钥保存在rgw"><a href="#加密密钥保存在rgw" class="headerlink" title="加密密钥保存在rgw"></a>加密密钥保存在rgw</h2><p>在集群配置文件/etc/ceph/ceph.conf里面，通过rgw crypt default encryption key来指定，缺点就是暴露了加密密钥。</p>
+<p><code>[client.rgw.rgw1]</code></p>
+<p><code>...</code></p>
+<p><code>rgw crypt default encryption key = 4YSmvJtBv0aZ7geVgAsdpRnLBEwWSWlMIGnRS8a9TSA=</code></p>
+<p><code>rgw_crypt_require_ssl = false</code></p>
+<p>然后客户端和正常的使用方式一样，上传数据时，rgw会对数据进行加密保存。</p>
+<h2 id="持久化客户端的密钥"><a href="#持久化客户端的密钥" class="headerlink" title="持久化客户端的密钥"></a>持久化客户端的密钥</h2><p>rgw客户端上传数据时，可以指定密钥，但后面如果忘记了这个密钥，就会无法读取数据了。这个时候我们存储系统需要保证客户端能够在忘记密钥的时候，也能读取数据。</p>
+<p>实现思路就是客户端在上传数据时，把指定的密钥保存在应用数据对象的head对象的xattr里面。这样就算客户端忘记密钥了，也可以通过rados getxattr来获取密钥。</p>
+<p><strong>修改代码</strong></p>
+<p>rgw_crypt.cc文件：</p>
+<p><code>int rgw_s3_prepare_decrypt(...){</code></p>
+<p><code>...</code></p>
+<p>​    <code>std::string key_bin;</code></p>
+<p>​    <code>try {</code></p>
+<p>​         <code>key_bin = from_base64(s-&gt;info.env-&gt;get(&quot;HTTP_X_AMZ_SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY&quot;, &quot;&quot;));</code></p>
+<p>​         <code>// save user custom encrypt key to attr. start dyp</code></p>
+<p>​         <code>string custom_key = to_base64(key_bin);</code></p>
+<p>​         <code>bufferlist custom_key_bl;</code></p>
+<p>​          <code>custom_key_bl.append(custom_key.c_str(), custom_key.size() + 1);</code></p>
+<p>​          <code>attrs.emplace(std::move(RGW_ATTR_USER_CUSTOM_KEY), std::move(custom_key_bl));</code></p>
+<p><code>// save user custom encrypt key to attr. end dyp</code></p>
+<p>​    <code>}</code> </p>
+<p><code>...</code></p>
+<p><code>}</code></p>
+<p>rgw_common.h 文件：</p>
+<p><code>#define RGW_ATTR_X_ROBOTS_TAG    RGW_ATTR_PREFIX &quot;x-robots-tag&quot;</code></p>
+<p><code>// save user custom encrypt key to attr. start dyp</code></p>
+<p><code>\#define RGW_ATTR_USER_CUSTOM_KEY    RGW_ATTR_PREFIX &quot;user_custom_key&quot;</code></p>
+<p><code>// save user custom encrypt key to attr. end dyp</code></p>
+<p><strong>测试</strong></p>
+<p>rgw客户端对数据加密存储的时候，其head对象增加了名为rgw_user_custom_key的xattr：</p>
+<p><img src="C:\Users\xsky\AppData\Local\YNote\data\qqEB70F42D4856E9A505088F702DBE7FD2\0a62af653cca424e98efbd0eb2b7fc65\clipboard.png" alt="img"></p>
+<p>获取该rgw_user_custom_key的值，就可以拿到用户指定的加密密钥：</p>
+<p><img src="C:\Users\xsky\AppData\Local\YNote\data\qqEB70F42D4856E9A505088F702DBE7FD2\1ae105267bde4f8980c444bca8fc5265\clipboard.png" alt="img"></p>
+<p>正常上传对象时，则不需要保存该xattr：</p>
+<p><img src="C:\Users\xsky\AppData\Local\YNote\data\qqEB70F42D4856E9A505088F702DBE7FD2\0fe0af6b85794422b78538e4c404b0a0\clipboard.png" alt="img"></p>
+
+      
+
+      
+    </div>
+    <div class="article-info article-info-index">
+      
+      
+      
+
+      
+        <p class="article-more-link">
+          <a class="article-more-a" href="/2021/07/13/rgw：数据加密/">展开全文 >></a>
+        </p>
+      
+
+      
+      <div class="clearfix"></div>
+    </div>
+  </div>
+</article>
+
+<aside class="wrap-side-operation">
+    <div class="mod-side-operation">
+        
+        <div class="jump-container" id="js-jump-container" style="display:none;">
+            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
+                <i class="icon-font icon-back"></i>
+            </a>
+            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
+                <i class="icon-font icon-plane jump-plane"></i>
+            </div>
+        </div>
+        
+        
+    </div>
+</aside>
+
+
+
+
+  
     <article id="post-配置ceph osd的coredump" class="article article-type-post  article-index" itemscope itemprop="blogPost">
   <div class="article-inner">
     
@@ -1243,258 +1346,6 @@ instructing pg 23.1 on osd.0 to repair
       
         <p class="article-more-link">
           <a class="article-more-a" href="/2021/02/24/如何处理PG inconsistent状态/">展开全文 >></a>
-        </p>
-      
-
-      
-      <div class="clearfix"></div>
-    </div>
-  </div>
-</article>
-
-<aside class="wrap-side-operation">
-    <div class="mod-side-operation">
-        
-        <div class="jump-container" id="js-jump-container" style="display:none;">
-            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
-                <i class="icon-font icon-back"></i>
-            </a>
-            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
-                <i class="icon-font icon-plane jump-plane"></i>
-            </div>
-        </div>
-        
-        
-    </div>
-</aside>
-
-
-
-
-  
-    <article id="post-解决一个部署osd时奇葩的报错问题" class="article article-type-post  article-index" itemscope itemprop="blogPost">
-  <div class="article-inner">
-    
-      <header class="article-header">
-        
-  
-    <h1 itemprop="name">
-      <a class="article-title" href="/2021/02/24/解决一个部署osd时奇葩的报错问题/">解决一个部署osd时奇葩的报错问题</a>
-    </h1>
-  
-
-        
-        <a href="/2021/02/24/解决一个部署osd时奇葩的报错问题/" class="archive-article-date">
-  	<time datetime="2021-02-24T11:52:14.552Z" itemprop="datePublished"><i class="icon-calendar icon"></i>2021-02-24</time>
-</a>
-        
-      </header>
-    
-    <div class="article-entry" itemprop="articleBody">
-      
-        <h2 id="故障现象"><a href="#故障现象" class="headerlink" title="故障现象"></a>故障现象</h2><p>ceph-deploy部署osd时如果不手动指定journal分区，让deploy自动去做journal分区就没问题，如果手动指定journal分区就会报错，过程如下：</p>
-<h3 id="prepare"><a href="#prepare" class="headerlink" title="prepare"></a>prepare</h3><p>prepare可以正常执行：</p>
-<pre><code>[root@wz_node86 ceph-deploy]# ceph-deploy osd prepare wz_node86:/dev/sdq2:/dev/sdq1
-[ceph_deploy.conf][DEBUG ] found configuration file at: /root/.cephdeploy.conf
-[ceph_deploy.cli][INFO  ] Invoked (1.5.33): /usr/bin/ceph-deploy osd prepare wz_node86:/dev/sdq2:/dev/sdq1
-[ceph_deploy.cli][INFO  ] ceph-deploy options:
-[ceph_deploy.cli][INFO  ]  username                      : None
-[ceph_deploy.cli][INFO  ]  disk                          : [(&apos;wz_node86&apos;, &apos;/dev/sdq2&apos;, &apos;/dev/sdq1&apos;)]
-[ceph_deploy.cli][INFO  ]  dmcrypt                       : False
-[ceph_deploy.cli][INFO  ]  verbose                       : False
-[ceph_deploy.cli][INFO  ]  bluestore                     : None
-[ceph_deploy.cli][INFO  ]  pushy                         : &lt;function connect at 0x1404050&gt;
-[ceph_deploy.cli][INFO  ]  overwrite_conf                : False
-[ceph_deploy.cli][INFO  ]  subcommand                    : prepare
-[ceph_deploy.cli][INFO  ]  dmcrypt_key_dir               : /etc/ceph/dmcrypt-keys
-[ceph_deploy.cli][INFO  ]  quiet                         : False
-[ceph_deploy.cli][INFO  ]  cd_conf                       : &lt;ceph_deploy.conf.cephdeploy.Conf instance at 0x19b0320&gt;
-[ceph_deploy.cli][INFO  ]  cluster                       : ceph
-[ceph_deploy.cli][INFO  ]  fs_type                       : xfs
-[ceph_deploy.cli][INFO  ]  func                          : &lt;function osd at 0x158eb18&gt;
-[ceph_deploy.cli][INFO  ]  ceph_conf                     : None
-[ceph_deploy.cli][INFO  ]  default_release               : False
-[ceph_deploy.cli][INFO  ]  zap_disk                      : False
-[ceph_deploy.osd][DEBUG ] Preparing cluster ceph disks wz_node86:/dev/sdq2:/dev/sdq1
-[wz_node86][DEBUG ] connected to host: wz_node86 
-[wz_node86][DEBUG ] detect platform information from remote host
-[wz_node86][DEBUG ] detect machine type
-[wz_node86][DEBUG ] find the location of an executable
-[ceph_deploy.osd][INFO  ] Distro info: CentOS 7.2.1511 Core
-[ceph_deploy.osd][DEBUG ] Deploying osd to wz_node86
-[wz_node86][DEBUG ] write cluster configuration to /etc/ceph/{cluster}.conf
-[ceph_deploy.osd][DEBUG ] Preparing host wz_node86 disk /dev/sdq2 journal /dev/sdq1 activate False
-[wz_node86][DEBUG ] find the location of an executable
-[wz_node86][INFO  ] Running command: /usr/sbin/ceph-disk -v prepare --cluster ceph --fs-type xfs -- /dev/sdq2 /dev/sdq1
-[wz_node86][WARNIN] command: Running command: /usr/bin/ceph-osd --cluster=ceph --show-config-value=fsid
-[wz_node86][WARNIN] command: Running command: /usr/bin/ceph-osd --check-allows-journal -i 0 --cluster ceph --setuser ceph --setgroup ceph
-[wz_node86][WARNIN] command: Running command: /usr/bin/ceph-osd --check-wants-journal -i 0 --cluster ceph --setuser ceph --setgroup ceph
-[wz_node86][WARNIN] command: Running command: /usr/bin/ceph-osd --check-needs-journal -i 0 --cluster ceph --setuser ceph --setgroup ceph
-[wz_node86][WARNIN] get_dm_uuid: get_dm_uuid /dev/sdq2 uuid path is /sys/dev/block/65:2/dm/uuid
-[wz_node86][WARNIN] command: Running command: /usr/bin/ceph-osd --cluster=ceph --show-config-value=osd_journal_size
-[wz_node86][WARNIN] get_dm_uuid: get_dm_uuid /dev/sdq2 uuid path is /sys/dev/block/65:2/dm/uuid
-[wz_node86][WARNIN] get_dm_uuid: get_dm_uuid /dev/sdq2 uuid path is /sys/dev/block/65:2/dm/uuid
-[wz_node86][WARNIN] command: Running command: /usr/bin/ceph-conf --cluster=ceph --name=osd. --lookup osd_mkfs_options_xfs
-[wz_node86][WARNIN] command: Running command: /usr/bin/ceph-conf --cluster=ceph --name=osd. --lookup osd_mount_options_xfs
-[wz_node86][WARNIN] get_dm_uuid: get_dm_uuid /dev/sdq1 uuid path is /sys/dev/block/65:1/dm/uuid
-[wz_node86][WARNIN] prepare_device: Journal /dev/sdq1 is a partition
-[wz_node86][WARNIN] get_dm_uuid: get_dm_uuid /dev/sdq1 uuid path is /sys/dev/block/65:1/dm/uuid
-[wz_node86][WARNIN] prepare_device: OSD will not be hot-swappable if journal is not the same device as the osd data
-[wz_node86][WARNIN] command: Running command: /usr/sbin/blkid -o udev -p /dev/sdq1
-[wz_node86][WARNIN] prepare_device: Journal /dev/sdq1 was not prepared with ceph-disk. Symlinking directly.
-[wz_node86][WARNIN] get_dm_uuid: get_dm_uuid /dev/sdq2 uuid path is /sys/dev/block/65:2/dm/uuid
-[wz_node86][WARNIN] set_data_partition: OSD data device /dev/sdq2 is a partition
-[wz_node86][WARNIN] get_dm_uuid: get_dm_uuid /dev/sdq2 uuid path is /sys/dev/block/65:2/dm/uuid
-[wz_node86][WARNIN] command: Running command: /usr/sbin/blkid -o udev -p /dev/sdq2
-[wz_node86][WARNIN] set_data_partition: incorrect partition UUID: 0fc63daf-8483-4772-8e79-3d69d8477de4, expected [&apos;4fbd7e29-9d25-41b8-afd0-5ec00ceff05d&apos;, &apos;4fbd7e29-9d25-41b8-afd0-062c0ceff05d&apos;, &apos;4fbd7e29-8ae0-4982-bf9d-5a8d867af560&apos;, &apos;4fbd7e29-9d25-41b8-afd0-35865ceff05d&apos;]
-[wz_node86][WARNIN] populate_data_path_device: Creating xfs fs on /dev/sdq2
-[wz_node86][WARNIN] command_check_call: Running command: /usr/sbin/mkfs -t xfs -f -i size=2048 -f -- /dev/sdq2
-[wz_node86][DEBUG ] meta-data=/dev/sdq2              isize=2048   agcount=6, agsize=268435455 blks
-[wz_node86][DEBUG ]          =                       sectsz=4096  attr=2, projid32bit=1
-[wz_node86][DEBUG ]          =                       crc=0        finobt=0
-[wz_node86][DEBUG ] data     =                       bsize=4096   blocks=1463819665, imaxpct=5
-[wz_node86][DEBUG ]          =                       sunit=0      swidth=0 blks
-[wz_node86][DEBUG ] naming   =version 2              bsize=4096   ascii-ci=0 ftype=0
-[wz_node86][DEBUG ] log      =internal log           bsize=4096   blocks=521728, version=2
-[wz_node86][DEBUG ]          =                       sectsz=4096  sunit=1 blks, lazy-count=1
-[wz_node86][DEBUG ] realtime =none                   extsz=4096   blocks=0, rtextents=0
-[wz_node86][WARNIN] mount: Mounting /dev/sdq2 on /var/lib/ceph/tmp/mnt.qlgXjP with options rw,noatime,inode64
-[wz_node86][WARNIN] command_check_call: Running command: /usr/bin/mount -t xfs -o rw,noatime,inode64 -- /dev/sdq2 /var/lib/ceph/tmp/mnt.qlgXjP
-[wz_node86][WARNIN] command: Running command: /usr/sbin/restorecon /var/lib/ceph/tmp/mnt.qlgXjP
-[wz_node86][WARNIN] populate_data_path: Preparing osd data dir /var/lib/ceph/tmp/mnt.qlgXjP
-[wz_node86][WARNIN] command: Running command: /usr/sbin/restorecon -R /var/lib/ceph/tmp/mnt.qlgXjP/ceph_fsid.671356.tmp
-[wz_node86][WARNIN] command: Running command: /usr/bin/chown -R ceph:ceph /var/lib/ceph/tmp/mnt.qlgXjP/ceph_fsid.671356.tmp
-[wz_node86][WARNIN] command: Running command: /usr/sbin/restorecon -R /var/lib/ceph/tmp/mnt.qlgXjP/fsid.671356.tmp
-[wz_node86][WARNIN] command: Running command: /usr/bin/chown -R ceph:ceph /var/lib/ceph/tmp/mnt.qlgXjP/fsid.671356.tmp
-[wz_node86][WARNIN] command: Running command: /usr/sbin/restorecon -R /var/lib/ceph/tmp/mnt.qlgXjP/magic.671356.tmp
-[wz_node86][WARNIN] command: Running command: /usr/bin/chown -R ceph:ceph /var/lib/ceph/tmp/mnt.qlgXjP/magic.671356.tmp
-[wz_node86][WARNIN] command: Running command: /usr/sbin/restorecon -R /var/lib/ceph/tmp/mnt.qlgXjP/journal_uuid.671356.tmp
-[wz_node86][WARNIN] command: Running command: /usr/bin/chown -R ceph:ceph /var/lib/ceph/tmp/mnt.qlgXjP/journal_uuid.671356.tmp
-[wz_node86][WARNIN] adjust_symlink: Creating symlink /var/lib/ceph/tmp/mnt.qlgXjP/journal -&gt; /dev/sdq1
-[wz_node86][WARNIN] command: Running command: /usr/sbin/restorecon -R /var/lib/ceph/tmp/mnt.qlgXjP
-[wz_node86][WARNIN] command: Running command: /usr/bin/chown -R ceph:ceph /var/lib/ceph/tmp/mnt.qlgXjP
-[wz_node86][WARNIN] unmount: Unmounting /var/lib/ceph/tmp/mnt.qlgXjP
-[wz_node86][WARNIN] command_check_call: Running command: /bin/umount -- /var/lib/ceph/tmp/mnt.qlgXjP
-[wz_node86][WARNIN] get_dm_uuid: get_dm_uuid /dev/sdq2 uuid path is /sys/dev/block/65:2/dm/uuid
-[wz_node86][INFO  ] checking OSD status...
-[wz_node86][DEBUG ] find the location of an executable
-[wz_node86][INFO  ] Running command: /bin/ceph --cluster=ceph osd stat --format=json
-[wz_node86][WARNIN] there is 1 OSD down
-[wz_node86][WARNIN] there is 1 OSD out
-[ceph_deploy.osd][DEBUG ] Host wz_node86 is now ready for osd use.
-</code></pre><h3 id="activate"><a href="#activate" class="headerlink" title="activate"></a>activate</h3><p>activate的时候报错如下：</p>
-<pre><code>[root@wz_node86 ceph-deploy]# ceph-deploy osd activate wz_node86:/dev/sdq2
-[ceph_deploy.conf][DEBUG ] found configuration file at: /root/.cephdeploy.conf
-[ceph_deploy.cli][INFO  ] Invoked (1.5.33): /usr/bin/ceph-deploy osd activate wz_node86:/dev/sdq2:/dev/sdq1
-[ceph_deploy.cli][INFO  ] ceph-deploy options:
-[ceph_deploy.cli][INFO  ]  username                      : None
-[ceph_deploy.cli][INFO  ]  verbose                       : False
-[ceph_deploy.cli][INFO  ]  pushy                         : &lt;function connect at 0xfc9050&gt;
-[ceph_deploy.cli][INFO  ]  overwrite_conf                : False
-[ceph_deploy.cli][INFO  ]  subcommand                    : activate
-[ceph_deploy.cli][INFO  ]  quiet                         : False
-[ceph_deploy.cli][INFO  ]  cd_conf                       : &lt;ceph_deploy.conf.cephdeploy.Conf instance at 0x1575320&gt;
-[ceph_deploy.cli][INFO  ]  cluster                       : ceph
-[ceph_deploy.cli][INFO  ]  func                          : &lt;function osd at 0x1153b18&gt;
-[ceph_deploy.cli][INFO  ]  ceph_conf                     : None
-[ceph_deploy.cli][INFO  ]  default_release               : False
-[ceph_deploy.cli][INFO  ]  disk                          : [(&apos;wz_node86&apos;, &apos;/dev/sdq2&apos;, &apos;/dev/sdq1&apos;)]
-[ceph_deploy.osd][DEBUG ] Activating cluster ceph disks wz_node86:/dev/sdq2:/dev/sdq1
-[wz_node86][DEBUG ] connected to host: wz_node86 
-[wz_node86][DEBUG ] detect platform information from remote host
-[wz_node86][DEBUG ] detect machine type
-[wz_node86][DEBUG ] find the location of an executable
-[ceph_deploy.osd][INFO  ] Distro info: CentOS 7.2.1511 Core
-[ceph_deploy.osd][DEBUG ] activating host wz_node86 disk /dev/sdq2
-[ceph_deploy.osd][DEBUG ] will use init type: systemd
-[wz_node86][DEBUG ] find the location of an executable
-[wz_node86][INFO  ] Running command: /usr/sbin/ceph-disk -v activate --mark-init systemd --mount /dev/sdq2
-[wz_node86][WARNIN] main_activate: path = /dev/sdq2
-[wz_node86][WARNIN] get_dm_uuid: get_dm_uuid /dev/sdq2 uuid path is /sys/dev/block/65:2/dm/uuid
-[wz_node86][WARNIN] command: Running command: /usr/sbin/blkid -o udev -p /dev/sdq2
-[wz_node86][WARNIN] command: Running command: /sbin/blkid -p -s TYPE -o value -- /dev/sdq2
-[wz_node86][WARNIN] command: Running command: /usr/bin/ceph-conf --cluster=ceph --name=osd. --lookup osd_mount_options_xfs
-[wz_node86][WARNIN] mount: Mounting /dev/sdq2 on /var/lib/ceph/tmp/mnt.XLOFBd with options rw,noatime,inode64
-[wz_node86][WARNIN] command_check_call: Running command: /usr/bin/mount -t xfs -o rw,noatime,inode64 -- /dev/sdq2 /var/lib/ceph/tmp/mnt.XLOFBd
-[wz_node86][WARNIN] command: Running command: /usr/sbin/restorecon /var/lib/ceph/tmp/mnt.XLOFBd
-[wz_node86][WARNIN] activate: Cluster uuid is 03069551-6d93-4600-96ad-63da5a862809
-[wz_node86][WARNIN] command: Running command: /usr/bin/ceph-osd --cluster=ceph --show-config-value=fsid
-[wz_node86][WARNIN] activate: Cluster name is ceph
-[wz_node86][WARNIN] activate: OSD uuid is dd0b0be6-aab1-471c-9039-a240498fb696
-[wz_node86][WARNIN] activate: OSD id is 0
-[wz_node86][WARNIN] activate: Initializing OSD...
-[wz_node86][WARNIN] command_check_call: Running command: /usr/bin/ceph --cluster ceph --name client.bootstrap-osd --keyring /var/lib/ceph/bootstrap-osd/ceph.keyring mon getmap -o /var/lib/ceph/tmp/mnt.XLOFBd/activate.monmap
-[wz_node86][WARNIN] got monmap epoch 3
-[wz_node86][WARNIN] command_check_call: Running command: /usr/bin/ceph-osd --cluster ceph --mkfs --mkkey -i 0 --monmap /var/lib/ceph/tmp/mnt.XLOFBd/activate.monmap --osd-data /var/lib/ceph/tmp/mnt.XLOFBd --osd-journal /var/lib/ceph/tmp/mnt.XLOFBd/journal --osd-uuid dd0b0be6-aab1-471c-9039-a240498fb696 --keyring /var/lib/ceph/tmp/mnt.XLOFBd/keyring --setuser ceph --setgroup ceph
-[wz_node86][WARNIN] 2019-05-14 18:10:02.783268 7f3ac70ae800 -1 journal check: ondisk fsid 00000000-0000-0000-0000-000000000000 doesn&apos;t match expected dd0b0be6-aab1-471c-9039-a240498fb696, invalid (someone else&apos;s?) journal
-[wz_node86][WARNIN] 2019-05-14 18:10:02.783695 7f3ac70ae800 -1 journal FileJournal::_open: unable to setup io_context (0) Success
-[wz_node86][WARNIN] 2019-05-14 18:10:02.783747 7f3ac70ae800 -1 journal FileJournal::create : create write header error (9) Bad file descriptor
-[wz_node86][WARNIN] 2019-05-14 18:10:02.783761 7f3ac70ae800 -1 journal FileJournal::create: error closing fd: (9) Bad file descriptor
-[wz_node86][WARNIN] 2019-05-14 18:10:02.783813 7f3ac70ae800 -1 filestore(/var/lib/ceph/tmp/mnt.XLOFBd) mkjournal error creating journal on /var/lib/ceph/tmp/mnt.XLOFBd/journal: (9) Bad file descriptor
-[wz_node86][WARNIN] 2019-05-14 18:10:02.783864 7f3ac70ae800 -1 OSD::mkfs: ObjectStore::mkfs failed with error -9
-[wz_node86][WARNIN] 2019-05-14 18:10:02.783938 7f3ac70ae800 -1  ** ERROR: error creating empty object store in /var/lib/ceph/tmp/mnt.XLOFBd: (9) Bad file descriptor
-[wz_node86][WARNIN] mount_activate: Failed to activate
-[wz_node86][WARNIN] unmount: Unmounting /var/lib/ceph/tmp/mnt.XLOFBd
-[wz_node86][WARNIN] command_check_call: Running command: /bin/umount -- /var/lib/ceph/tmp/mnt.XLOFBd
-[wz_node86][WARNIN] Traceback (most recent call last):
-[wz_node86][WARNIN]   File &quot;/usr/sbin/ceph-disk&quot;, line 9, in &lt;module&gt;
-[wz_node86][WARNIN]     load_entry_point(&apos;ceph-disk==1.0.0&apos;, &apos;console_scripts&apos;, &apos;ceph-disk&apos;)()
-[wz_node86][WARNIN]   File &quot;/usr/lib/python2.7/site-packages/ceph_disk/main.py&quot;, line 4970, in run
-[wz_node86][WARNIN]     main(sys.argv[1:])
-[wz_node86][WARNIN]   File &quot;/usr/lib/python2.7/site-packages/ceph_disk/main.py&quot;, line 4921, in main
-[wz_node86][WARNIN]     args.func(args)
-[wz_node86][WARNIN]   File &quot;/usr/lib/python2.7/site-packages/ceph_disk/main.py&quot;, line 3275, in main_activate
-[wz_node86][WARNIN]     reactivate=args.reactivate,
-[wz_node86][WARNIN]   File &quot;/usr/lib/python2.7/site-packages/ceph_disk/main.py&quot;, line 3032, in mount_activate
-[wz_node86][WARNIN]     (osd_id, cluster) = activate(path, activate_key_template, init)
-[wz_node86][WARNIN]   File &quot;/usr/lib/python2.7/site-packages/ceph_disk/main.py&quot;, line 3208, in activate
-[wz_node86][WARNIN]     keyring=keyring,
-[wz_node86][WARNIN]   File &quot;/usr/lib/python2.7/site-packages/ceph_disk/main.py&quot;, line 2701, in mkfs
-[wz_node86][WARNIN]     &apos;--setgroup&apos;, get_ceph_group(),
-[wz_node86][WARNIN]   File &quot;/usr/lib/python2.7/site-packages/ceph_disk/main.py&quot;, line 439, in command_check_call
-[wz_node86][WARNIN]     return subprocess.check_call(arguments)
-[wz_node86][WARNIN]   File &quot;/usr/lib64/python2.7/subprocess.py&quot;, line 542, in check_call
-[wz_node86][WARNIN]     raise CalledProcessError(retcode, cmd)
-[wz_node86][WARNIN] subprocess.CalledProcessError: Command &apos;[&apos;/usr/bin/ceph-osd&apos;, &apos;--cluster&apos;, &apos;ceph&apos;, &apos;--mkfs&apos;, &apos;--mkkey&apos;, &apos;-i&apos;, &apos;0&apos;, &apos;--monmap&apos;, &apos;/var/lib/ceph/tmp/mnt.XLOFBd/activate.monmap&apos;, &apos;--osd-data&apos;, &apos;/var/lib/ceph/tmp/mnt.XLOFBd&apos;, &apos;--osd-journal&apos;, &apos;/var/lib/ceph/tmp/mnt.XLOFBd/journal&apos;, &apos;--osd-uuid&apos;, &apos;dd0b0be6-aab1-471c-9039-a240498fb696&apos;, &apos;--keyring&apos;, &apos;/var/lib/ceph/tmp/mnt.XLOFBd/keyring&apos;, &apos;--setuser&apos;, &apos;ceph&apos;, &apos;--setgroup&apos;, &apos;ceph&apos;]&apos; returned non-zero exit status 1
-[wz_node86][ERROR ] RuntimeError: command returned non-zero exit status: 1
-[ceph_deploy][ERROR ] RuntimeError: Failed to execute command: /usr/sbin/ceph-disk -v activate --mark-init systemd --mount /dev/sdq2
-</code></pre><h2 id="分析解决"><a href="#分析解决" class="headerlink" title="分析解决"></a>分析解决</h2><p>关键的错误日志如下：</p>
-<pre><code>[wz_node86][WARNIN] command_check_call: Running command: /usr/bin/ceph-osd --cluster ceph --mkfs --mkkey -i 0 --monmap /var/lib/ceph/tmp/mnt.XLOFBd/activate.monmap --osd-data /var/lib/ceph/tmp/mnt.XLOFBd --osd-journal /var/lib/ceph/tmp/mnt.XLOFBd/journal --osd-uuid dd0b0be6-aab1-471c-9039-a240498fb696 --keyring /var/lib/ceph/tmp/mnt.XLOFBd/keyring --setuser ceph --setgroup ceph
-[wz_node86][WARNIN] 2019-05-14 18:10:02.783268 7f3ac70ae800 -1 journal check: ondisk fsid 00000000-0000-0000-0000-000000000000 doesn&apos;t match expected dd0b0be6-aab1-471c-9039-a240498fb696, invalid (someone else&apos;s?) journal
-[wz_node86][WARNIN] 2019-05-14 18:10:02.783695 7f3ac70ae800 -1 journal FileJournal::_open: unable to setup io_context (0) Success
-[wz_node86][WARNIN] 2019-05-14 18:10:02.783747 7f3ac70ae800 -1 journal FileJournal::create : create write header error (9) Bad file descriptor
-[wz_node86][WARNIN] 2019-05-14 18:10:02.783761 7f3ac70ae800 -1 journal FileJournal::create: error closing fd: (9) Bad file descriptor
-[wz_node86][WARNIN] 2019-05-14 18:10:02.783813 7f3ac70ae800 -1 filestore(/var/lib/ceph/tmp/mnt.XLOFBd) mkjournal error creating journal on /var/lib/ceph/tmp/mnt.XLOFBd/journal: (9) Bad file descriptor
-[wz_node86][WARNIN] 2019-05-14 18:10:02.783864 7f3ac70ae800 -1 OSD::mkfs: ObjectStore::mkfs failed with error -9
-[wz_node86][WARNIN] 2019-05-14 18:10:02.783938 7f3ac70ae800 -1  ** ERROR: error creating empty object store in /var/lib/ceph/tmp/mnt.XLOFBd: (9) Bad file descriptor
-</code></pre><p>看到错误日志开始怀疑是journal分区没有清理干净，导致prepare的时候没有正确配置journal导致的，但是使用ceph-disk zap和 sgdisk -z把磁盘都清理干净了还是不行。然后根据错误日志查找相关代码，看到osd在启动的时候读取journal分区的如下代码：</p>
-<pre><code>if (aio) {
-    aio_ctx = 0;
-    ret = io_setup(128, &amp;aio_ctx);
-    if (ret &lt; 0) {
-      ret = errno;
-      derr &lt;&lt; &quot;FileJournal::_open: unable to setup io_context &quot; &lt;&lt; cpp_strerror(ret) &lt;&lt; dendl;
-      ret = -ret;
-      goto out_fd;
-    }
-  }
-</code></pre><p>可以看到如果osd的journal是单独的分区时，osd是使用aio的方式去open journal的，然后查资料找到了应该内核限制了aio的请求数。然后增加下面的内核参数：</p>
-<pre><code>echo 131072 &gt; /proc/sys/fs/aio-max-nr
-</code></pre><p>这个参数在centos 7.2里面默认是65536，在7.6里面把这个参数增加到了1048576。推测后面应用软件会大量使用aio的方式来优化性能，所以可以适当的增加该内核参数。</p>
-<p>好了，问题解决了，可以正常部署osd了。</p>
-
-      
-
-      
-    </div>
-    <div class="article-info article-info-index">
-      
-      
-      
-
-      
-        <p class="article-more-link">
-          <a class="article-more-a" href="/2021/02/24/解决一个部署osd时奇葩的报错问题/">展开全文 >></a>
         </p>
       
 
