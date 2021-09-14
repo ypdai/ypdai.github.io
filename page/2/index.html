@@ -144,6 +144,184 @@
           <div id="js-content" class="content-ll">
             
   
+    <article id="post-如何处理PG inconsistent状态" class="article article-type-post  article-index" itemscope itemprop="blogPost">
+  <div class="article-inner">
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="article-title" href="/2021/02/24/如何处理PG inconsistent状态/">如何处理PG inconsistent状态</a>
+    </h1>
+  
+
+        
+        <a href="/2021/02/24/如何处理PG inconsistent状态/" class="archive-article-date">
+  	<time datetime="2021-02-24T11:52:14.699Z" itemprop="datePublished"><i class="icon-calendar icon"></i>2021-02-24</time>
+</a>
+        
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>这里通过实验操作，说明下集群出现pg inconsistent状态的原因和处理办法。</p>
+<h2 id="实验操作"><a href="#实验操作" class="headerlink" title="实验操作"></a>实验操作</h2><h3 id="1、准备测试集群"><a href="#1、准备测试集群" class="headerlink" title="1、准备测试集群"></a>1、准备测试集群</h3><p>下面是我准备的3节点测试集群</p>
+<pre><code>[root@ceph01 23.1_head]# ceph -s
+    cluster 29978a95-87f1-4a0c-96fa-2369e985bfbe
+     health HEALTH_OK
+     monmap e1: 1 mons at {ceph01=192.168.10.20:6789/0}
+            election epoch 13, quorum 0 ceph01
+      fsmap e44: 1/1/1 up {0=ceph01=up:active}
+     osdmap e462: 7 osds: 7 up, 7 in
+            flags sortbitwise,require_jewel_osds
+      pgmap v142266: 464 pgs, 15 pools, 156 MB data, 272 objects
+            1153 MB used, 103 GB / 104 GB avail
+                 464 active+clean
+
+[root@ceph01 23.1_head]# ceph osd tree
+ID WEIGHT  TYPE NAME       UP/DOWN REWEIGHT PRIMARY-AFFINITY 
+-1 0.08752 root default                                      
+-2 0.02917     host ceph01                                   
+ 0 0.01459         osd.0        up  1.00000          1.00000 
+ 1 0.01459         osd.1        up  1.00000          1.00000 
+-3 0.02917     host ceph02                                   
+ 2 0.01459         osd.2        up  1.00000          1.00000 
+ 3 0.01459         osd.3        up  1.00000          1.00000 
+-4 0.02917     host ceph03                                   
+ 4 0.01459         osd.4        up  1.00000          1.00000 
+ 5 0.01459         osd.5        up  1.00000          1.00000 
+ 6       0 osd.6                up  1.00000          1.00000
+</code></pre><h3 id="2、模拟pg-inconsistent状态"><a href="#2、模拟pg-inconsistent状态" class="headerlink" title="2、模拟pg inconsistent状态"></a>2、模拟pg inconsistent状态</h3><p>随便选择一个pg，我这里选择的是23.1这个pg，该pg分布在osd.2和osd.2上面：</p>
+<pre><code>[root@ceph01 23.1_head]# ceph pg map 23.1
+osdmap e462 pg 23.1 (23.1) -&gt; up [0,2] acting [0,2]
+</code></pre><p>在主本osd.0所在节点上进入pg 23.1的目录，并选择一个对象获取其所有的xattrs：</p>
+<pre><code>[root@ceph01 23.1_head]# pwd
+/var/lib/ceph/osd/ceph-0/current/23.1_head
+[root@ceph02 23.1_head]# getfattr -m &quot;.*&quot; 475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2\\u222__head_81BA0161__17 
+# file: 475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2\134u222__head_81BA0161__17
+user.ceph._
+user.ceph._@1
+user.ceph._user.rgw.acl
+user.ceph._user.rgw.etag
+user.ceph._user.rgw.idtag
+user.ceph._user.rgw.manifest
+user.ceph._user.rgw.manifest@1
+user.ceph._user.rgw.manifest@2
+user.ceph._user.rgw.pg_ver
+user.ceph._user.rgw.source_zone
+user.ceph._user.rgw.unix-key1
+user.ceph._user.rgw.unix1
+user.ceph.snapset
+user.cephos.spill_out
+user.foo
+</code></pre><p>然后获取其中一个xattr：</p>
+<pre><code>[root@ceph01 23.1_head]# getfattr -n user.ceph._user.rgw.idtag 475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2\\u222__head_81BA0161__17
+# file: 475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2\134u222__head_81BA0161__17
+user.ceph._user.rgw.idtag=&quot;_oamSgdWXhjtMSTEP3OI9g1dL42ZQNx11&quot;
+</code></pre><p>到pg 23.1的副本osd上，同样获取下这个对象的xattr：</p>
+<pre><code>[root@ceph02 23.1_head]# getfattr -n user.ceph._user.rgw.idtag 475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2\\u222__head_81BA0161__17
+# file: 475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2\134u222__head_81BA0161__17
+user.ceph._user.rgw.idtag=&quot;_oamSgdWXhjtMSTEP3OI9g1dL42ZQNx11&quot;
+</code></pre><p>可以看到对象的user.ceph._user.rgw.idtag扩展属性在主副本上是一样的，这就是正常情况。下面我们手动把主本的扩展属性改下：</p>
+<pre><code>[root@ceph01 23.1_head]# setfattr -n user.ceph._user.rgw.idtag -v &quot;_oamSgdWXhjtMSTEP3OI9g1dL42ZQNx12&quot; 475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2\\u222__head_81BA0161__17
+</code></pre><p>然后手动触发scrub：</p>
+<pre><code>[root@ceph01 23.1_head]# ceph pg scrub 23.1
+instructing pg 23.1 on osd.0 to scrub
+</code></pre><p>然后再看集群状态变成了ERR：</p>
+<pre><code>[root@ceph01 23.1_head]# ceph -s
+    cluster 29978a95-87f1-4a0c-96fa-2369e985bfbe
+     health HEALTH_ERR
+            1 pgs inconsistent
+            1 scrub errors
+     monmap e1: 1 mons at {ceph01=192.168.10.20:6789/0}
+            election epoch 13, quorum 0 ceph01
+      fsmap e44: 1/1/1 up {0=ceph01=up:active}
+     osdmap e462: 7 osds: 7 up, 7 in
+            flags sortbitwise,require_jewel_osds
+      pgmap v142290: 464 pgs, 15 pools, 156 MB data, 272 objects
+            1153 MB used, 103 GB / 104 GB avail
+                 463 active+clean
+                   1 active+clean+inconsistent
+</code></pre><p>此时在osd.0的日志里面可以看到scrub的信息：</p>
+<pre><code>2019-02-26 17:33:49.841272 7f4976219700  0 log_channel(cluster) log [INF] : 23.1 scrub starts
+2019-02-26 17:33:49.842529 7f4976219700 -1 log_channel(cluster) log [ERR] : 23.1 : soid 23:86805d81:::475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2_222:head attr value mismatch &apos;_user.rgw.idtag&apos;
+2019-02-26 17:33:49.842613 7f4976219700 -1 log_channel(cluster) log [ERR] : 23.1 scrub 0 missing, 1 inconsistent objects
+2019-02-26 17:33:49.842619 7f4976219700 -1 log_channel(cluster) log [ERR] : 23.1 scrub 1 errors
+</code></pre><p>上面的信息告诉我们23.1这个pg里面的475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2_222这个对象的_user.rgw.idtag属性在主副本之间不一致。</p>
+<p>这里可以知道pg出现inconsistent状态时，是由于pg里面的对象的主副本之间出现数据或元数据不一致导致的（我们上面是修改了其中一个副本的xattr，也可以直接删掉某一个xattr）。</p>
+<p>下面看下如何处理这种情况。</p>
+<h3 id="3、如何解决"><a href="#3、如何解决" class="headerlink" title="3、如何解决"></a>3、如何解决</h3><h4 id="3-1、方式一"><a href="#3-1、方式一" class="headerlink" title="3.1、方式一"></a>3.1、方式一</h4><p>上面我们通过osd日志知道哪个pg出现了问题（也可以直接通过ceph health detail命令查看），然后对这个pg执行repair操作即可：</p>
+<pre><code>[root@ceph01 23.1_head]# ceph pg repair 23.1
+instructing pg 23.1 on osd.0 to repair
+</code></pre><p>一般情况下，等待一小会儿，集群就可以恢复正常了。</p>
+<p><strong>这里要注意：repair会去选择权威的副本，然后把选择出来的权威副本上属性同步到其他副本上去。</strong></p>
+<p>那我们如何知道权威副本是哪个呢？可以把debug_osd开到10，然后执行完ceph pg scrub {pgid}，然后在pg的主osd日志里面可以看到如下信息：</p>
+<pre><code>[root@ceph01 ~]# cat /var/log/ceph/ceph-osd.0.log|grep auth
+2019-02-26 18:22:33.849430 7f4976219700 10 osd.0 pg_epoch: 462 pg[23.1( v 367&apos;28 (0&apos;0,367&apos;28] local-les=460 n=1 ec=181 les/c/f 460/462/0 459/459/383) [0,2] r=0 lpr=459 crt=367&apos;28 lcod 0&apos;0 mlcod 0&apos;0 active+clean+scrubbing] be_select_auth_object: **selecting osd 0** for obj 23:86805d81:::475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2_222:head with oi 23:86805d81:::475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2_222:head(367&apos;25 client.84123.0:989 dirty|data_digest|omap_digest s 0 uv 25 dd ffffffff od ffffffff alloc_hint [0 0])
+2019-02-26 18:22:33.849718 7f4976219700 10 osd.0 pg_epoch: 462 pg[23.1( v 367&apos;28 (0&apos;0,367&apos;28] local-les=460 n=1 ec=181 les/c/f 460/462/0 459/459/383) [0,2] r=0 lpr=459 crt=367&apos;28 lcod 0&apos;0 mlcod 0&apos;0 active+clean+scrubbing] scrub_process_inconsistent: checking authoritative
+</code></pre><p>从上面的日志中可以看出osd.0被选成了权威副本。</p>
+<h4 id="3-2、方式二"><a href="#3-2、方式二" class="headerlink" title="3.2、方式二"></a>3.2、方式二</h4><p>1.查看pg的详细错误信息</p>
+<pre><code>[root@ceph01 0.14_head]# rados list-inconsistent-obj 0.14 --format=json-pretty
+</code></pre><p>2.通过rados get/put的方式修复</p>
+<pre><code>先把该对象获取出来
+[root@ceph01 0.14_head]# rados -p rbd get rbd_data.d37a6b8b4567.0000000000000017 /tmp/rbd_data.d37a6b8b4567.0000000000000017
+
+然后再put进去
+[root@ceph01 0.14_head]# rados -p rbd put rbd_data.d37a6b8b4567.0000000000000017 /tmp/rbd_data.d37a6b8b4567.0000000000000017
+</code></pre><h4 id="3-3、方式三"><a href="#3-3、方式三" class="headerlink" title="3.3、方式三"></a>3.3、方式三</h4><p>如果经过上面的操作，集群仍没有达到OK状态，可以尝试用下面这种方式进行修复。（参考：<a href="https://lihaijing.gitbooks.io/ceph-handbook/content/Troubleshooting/troubleshooting_pg.html）" target="_blank" rel="noopener">https://lihaijing.gitbooks.io/ceph-handbook/content/Troubleshooting/troubleshooting_pg.html）</a></p>
+<p>1、停掉数据不一致且非权威副本所属的 osd （如何知道哪个是权威副本，请参考我上面的说明）。</p>
+<pre><code>$ systemctl stop ceph-osd@{osdid}
+</code></pre><p>2、刷新该 osd 的日志。</p>
+<pre><code>$ ceph-osd -i {osdid} --flush-journal
+</code></pre><p>3、将不一致的 object 移除。</p>
+<pre><code>$ mv /var/lib/ceph/osd/ceph-{osdid}/current/{pgid}_head/ {object-name} /home
+</code></pre><p>4、重新启动该 osd 。</p>
+<pre><code>$ systemctl start ceph-osd@{osdid}
+</code></pre><p>5、重新执行修复命令。</p>
+<pre><code>$ ceph pg repair {pgid}
+</code></pre><h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>上面是两种修复的方法，基本的思想是一样的，就是先找出不一致（inconsistent）的对象，然后对比这个对象的主副本数据哪个更新，然后使用正确的副本对象去修复其他有问题的副本对象。</p>
+
+      
+
+      
+    </div>
+    <div class="article-info article-info-index">
+      
+      
+      
+
+      
+        <p class="article-more-link">
+          <a class="article-more-a" href="/2021/02/24/如何处理PG inconsistent状态/">展开全文 >></a>
+        </p>
+      
+
+      
+      <div class="clearfix"></div>
+    </div>
+  </div>
+</article>
+
+<aside class="wrap-side-operation">
+    <div class="mod-side-operation">
+        
+        <div class="jump-container" id="js-jump-container" style="display:none;">
+            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
+                <i class="icon-font icon-back"></i>
+            </a>
+            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
+                <i class="icon-font icon-plane jump-plane"></i>
+            </div>
+        </div>
+        
+        
+    </div>
+</aside>
+
+
+
+
+  
     <article id="post-解决一个部署osd时奇葩的报错问题" class="article article-type-post  article-index" itemscope itemprop="blogPost">
   <div class="article-inner">
     
@@ -2008,543 +2186,6 @@ b4a6227030352dcc3318684789fda6e1  message.txt
       
         <p class="article-more-link">
           <a class="article-more-a" href="/2021/02/24/rgw里面用户、bucket、用户数据之间关系/">展开全文 >></a>
-        </p>
-      
-
-      
-      <div class="clearfix"></div>
-    </div>
-  </div>
-</article>
-
-<aside class="wrap-side-operation">
-    <div class="mod-side-operation">
-        
-        <div class="jump-container" id="js-jump-container" style="display:none;">
-            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
-                <i class="icon-font icon-back"></i>
-            </a>
-            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
-                <i class="icon-font icon-plane jump-plane"></i>
-            </div>
-        </div>
-        
-        
-    </div>
-</aside>
-
-
-
-
-  
-    <article id="post-RGW对象版本控制（多版本）" class="article article-type-post  article-index" itemscope itemprop="blogPost">
-  <div class="article-inner">
-    
-      <header class="article-header">
-        
-  
-    <h1 itemprop="name">
-      <a class="article-title" href="/2021/02/24/RGW对象版本控制（多版本）/">RGW对象版本控制（多版本）</a>
-    </h1>
-  
-
-        
-        <a href="/2021/02/24/RGW对象版本控制（多版本）/" class="archive-article-date">
-  	<time datetime="2021-02-24T11:52:13.168Z" itemprop="datePublished"><i class="icon-calendar icon"></i>2021-02-24</time>
-</a>
-        
-      </header>
-    
-    <div class="article-entry" itemprop="articleBody">
-      
-        <h1 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h1><p>多版本就是字面意思：在相同的bucket中保留对象的多个版本。功能目的是为了可以恢复因意外删除或覆盖操作而失去的对象。</p>
-<p>好久之前玩过这个功能，但是没有记录下来，下面简单记录下。</p>
-<h2 id="1、实验环境"><a href="#1、实验环境" class="headerlink" title="1、实验环境"></a>1、实验环境</h2><p>三个虚拟机组成ceph集群，每台虚拟机配置信息一样，如下：</p>
-<pre><code>[root@ceph05 ~]# hostnamectl 
-   Static hostname: ceph05
-         Icon name: computer-vm
-           Chassis: vm
-        Machine ID: e8e9768445e2448fb3ff5e5b7138039c
-           Boot ID: 8be60bf35f1a4eb5be558934342009bb
-    Virtualization: vmware
-  Operating System: CentOS Linux 7 (Core)
-       CPE OS Name: cpe:/o:centos:centos:7
-            Kernel: Linux 3.10.0-957.el7.x86_64
-      Architecture: x86-64
-</code></pre><p>搭建标准的三节点集群：</p>
-<pre><code>[root@ceph05 ~]# ceph -v
-ceph version 12.2.12 (1436006594665279fe734b4c15d7e08c13ebd777) luminous (stable)
-[root@ceph05 ~]# ceph osd tree
-ID CLASS WEIGHT  TYPE NAME       STATUS REWEIGHT PRI-AFF 
--1       0.11691 root default                            
--3       0.03897     host ceph05                         
- 0   hdd 0.01949         osd.0       up  1.00000 1.00000 
- 1   hdd 0.01949         osd.1       up  1.00000 1.00000 
--5       0.03897     host ceph06                         
- 2   hdd 0.01949         osd.2       up  1.00000 1.00000 
- 3   hdd 0.01949         osd.3       up  1.00000 1.00000 
--7       0.03897     host ceph07                         
- 4   hdd 0.01949         osd.4       up  1.00000 1.00000 
- 5   hdd 0.01949         osd.5       up  1.00000 1.00000
-</code></pre><p>ceph05节点配置了一个rgw实例：</p>
-<pre><code>[root@ceph05 ~]# cat /etc/ceph/ceph.conf 
-...
-# 配置rgw实例信息
-[client.rgw.inst01]
-rgw_frontends = civetweb port=9001
-[root@ceph05 ~]# systemctl start ceph-radosgw@rgw.inst01
-</code></pre><p>ceph06节点作为rgw的客户端，安装awscli工具：</p>
-<pre><code>[root@ceph06 ~]# yum install -y awscli
-</code></pre><h2 id="2、实际操作"><a href="#2、实际操作" class="headerlink" title="2、实际操作"></a>2、实际操作</h2><blockquote>
-<p>注意：多版本是针对某个bucket去操作的。</p>
-</blockquote>
-<h3 id="2-1、上传对象"><a href="#2-1、上传对象" class="headerlink" title="2.1、上传对象"></a>2.1、上传对象</h3><blockquote>
-<p>先说结论：一个没有开启多版本的bucket，上传相同对象名的对象会覆盖，但是开启了多版本的bucket，会保留对象之前的版本。</p>
-</blockquote>
-<p>创建bucket01:</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api create-bucket --bucket bucket01
-</code></pre><p>上传一个名为test-key-1的对象:</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api put-object --bucket bucket01 --key test-key-1 --body /tmp/test-1
-{
-    &quot;ETag&quot;: &quot;\&quot;1181c1834012245d785120e3505ed169\&quot;&quot;
-}
-</code></pre><p>查看bucket01下的对象信息:</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api list-object-versions --bucket bucket01
-{
-    &quot;Versions&quot;: [
-        {
-            &quot;LastModified&quot;: &quot;2019-11-18T09:52:17.501Z&quot;, 
-            &quot;VersionId&quot;: &quot;null&quot;,    # 如果没有开启多版本，此字段为null
-            &quot;ETag&quot;: &quot;\&quot;1181c1834012245d785120e3505ed169\&quot;&quot;, 
-            &quot;StorageClass&quot;: &quot;STANDARD&quot;, 
-            &quot;Key&quot;: &quot;test-key-1&quot;, 
-            &quot;Owner&quot;: {
-                &quot;DisplayName&quot;: &quot;rgwuser02&quot;, 
-                &quot;ID&quot;: &quot;rgwuser02&quot;
-            }, 
-            &quot;IsLatest&quot;: true, 
-            &quot;Size&quot;: 4
-        }
-    ]
-}
-</code></pre><p>再次上传一个名为test-key-1的对象:</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api put-object --bucket bucket01 --key test-key-1 --body /tmp/test-2
-{
-    &quot;ETag&quot;: &quot;\&quot;348bd3ce10ec00ecc29d31ec97cd5839\&quot;&quot;
-}
-</code></pre><p>查看bucket01下的对象信息，看到之前上传的对象信息已经被覆盖了:</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api list-object-versions --bucket bucket01
-{
-    &quot;Versions&quot;: [
-        {
-            &quot;LastModified&quot;: &quot;2019-11-18T09:52:32.016Z&quot;, 
-            &quot;VersionId&quot;: &quot;null&quot;, 
-            &quot;ETag&quot;: &quot;\&quot;348bd3ce10ec00ecc29d31ec97cd5839\&quot;&quot;, 
-            &quot;StorageClass&quot;: &quot;STANDARD&quot;, 
-            &quot;Key&quot;: &quot;test-key-1&quot;, 
-            &quot;Owner&quot;: {
-                &quot;DisplayName&quot;: &quot;rgwuser02&quot;, 
-                &quot;ID&quot;: &quot;rgwuser02&quot;
-            }, 
-            &quot;IsLatest&quot;: true, 
-            &quot;Size&quot;: 4
-        }
-    ]
-}
-</code></pre><p>开启bucket01的多版本：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api put-bucket-versioning --bucket bucket01 --versioning-configuration Status=Enabled
-</code></pre><p>查看是否开启成功：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api get-bucket-versioning --bucket bucket01
-{
-    &quot;Status&quot;: &quot;Enabled&quot; # 表示开启成功
-}
-</code></pre><p>再次上传一个名为test-key-1的对象:</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api put-object --bucket bucket01 --key test-key-1 --body /tmp/test-4
-{
-    &quot;ETag&quot;: &quot;\&quot;45a62d3d5d3e946250904697486591bc\&quot;&quot;
-}
-</code></pre><p>查看bucket01下的对象信息:</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api list-object-versions --bucket bucket01
-{
-    &quot;Versions&quot;: [
-        {
-            &quot;LastModified&quot;: &quot;2019-11-19T06:20:54.613Z&quot;, 
-            &quot;VersionId&quot;: &quot;urD9LXRy9.ZgoDaYNagoZh911SqJlbG&quot;, 
-            &quot;ETag&quot;: &quot;\&quot;45a62d3d5d3e946250904697486591bc\&quot;&quot;, 
-            &quot;StorageClass&quot;: &quot;STANDARD&quot;, 
-            &quot;Key&quot;: &quot;test-key-1&quot;, 
-            &quot;Owner&quot;: {
-                &quot;DisplayName&quot;: &quot;rgwuser02&quot;, 
-                &quot;ID&quot;: &quot;rgwuser02&quot;
-            }, 
-            &quot;IsLatest&quot;: true, 
-            &quot;Size&quot;: 4
-        }, 
-        {
-            &quot;LastModified&quot;: &quot;2019-11-18T09:52:32.016Z&quot;, 
-            &quot;VersionId&quot;: &quot;null&quot;, 
-            &quot;ETag&quot;: &quot;\&quot;348bd3ce10ec00ecc29d31ec97cd5839\&quot;&quot;, 
-            &quot;StorageClass&quot;: &quot;STANDARD&quot;, 
-            &quot;Key&quot;: &quot;test-key-1&quot;, 
-            &quot;Owner&quot;: {
-                &quot;DisplayName&quot;: &quot;rgwuser02&quot;, 
-                &quot;ID&quot;: &quot;rgwuser02&quot;
-            }, 
-            &quot;IsLatest&quot;: false, 
-            &quot;Size&quot;: 4
-        }
-    ]
-}
-</code></pre><p>从上面的信息中可以看出，现在有两个版本的名为test-key-1的对象了，VersionId分别是null和urD9LXRy9.ZgoDaYNagoZh911SqJlbG，其中VersionId是urD9LXRy9.ZgoDaYNagoZh911SqJlbG的对象的IsLatest字段为true，表示改版本的对象是当前最新的。</p>
-<h3 id="2-2、获取对象"><a href="#2-2、获取对象" class="headerlink" title="2.2、获取对象"></a>2.2、获取对象</h3><blockquote>
-<p>先说结论：没有开启多版本时，相同对象名的对象只有一个，获取时也就只能获取这一个了。开启了多版本时，默认获取当前最新版本的对象，也可以显示指定–version-id参数来获取指定version的对象。</p>
-</blockquote>
-<p>默认获取当前最新的版本的对象：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api get-object --bucket bucket01 --key test-key-1 test-key-1.out
-{
-    &quot;AcceptRanges&quot;: &quot;bytes&quot;, 
-    &quot;ContentType&quot;: &quot;binary/octet-stream&quot;, 
-    &quot;LastModified&quot;: &quot;Tue, 19 Nov 2019 06:20:54 GMT&quot;, 
-    &quot;ContentLength&quot;: 4, 
-    &quot;VersionId&quot;: &quot;urD9LXRy9.ZgoDaYNagoZh911SqJlbG&quot;, 
-    &quot;ETag&quot;: &quot;\&quot;45a62d3d5d3e946250904697486591bc\&quot;&quot;, 
-    &quot;Metadata&quot;: {}
-}
-</code></pre><p>获取指定版本的对象：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api get-object --bucket bucket01 --key test-key-1 --version-id null test-key-1.out
-{
-    &quot;AcceptRanges&quot;: &quot;bytes&quot;, 
-    &quot;ContentType&quot;: &quot;binary/octet-stream&quot;, 
-    &quot;LastModified&quot;: &quot;Mon, 18 Nov 2019 09:52:32 GMT&quot;, 
-    &quot;ContentLength&quot;: 4, 
-    &quot;VersionId&quot;: &quot;null&quot;, 
-    &quot;ETag&quot;: &quot;\&quot;348bd3ce10ec00ecc29d31ec97cd5839\&quot;&quot;, 
-    &quot;Metadata&quot;: {}
-}
-</code></pre><h3 id="2-3、删除对象"><a href="#2-3、删除对象" class="headerlink" title="2.3、删除对象"></a>2.3、删除对象</h3><blockquote>
-<p>先说结论：没有开启多版本时，删除对象时将永久删除，且不可恢复。开启了多版本时，分两种情况，一种是不指定–version-id删除对象，此时rgw不会永久删除该对象，只是给该对象打上一个被删除标记，还有一种是显示指定–version-id参数来删除对象，此时rgw会永久删除该对象。</p>
-</blockquote>
-<p>新建一个bucket test-bucket-2：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api create-bucket --bucket test-bucket-2
-</code></pre><p>上传一个名为test-key-1的对象：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api put-object --bucket test-bucket-2 --key test-key-1 --body /tmp/test-2
-{
-    &quot;ETag&quot;: &quot;\&quot;348bd3ce10ec00ecc29d31ec97cd5839\&quot;&quot;
-}
-</code></pre><p>查看bucket里面的对象信息：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api list-object-versions --bucket test-bucket-2
-{
-    &quot;Versions&quot;: [
-        {
-            &quot;LastModified&quot;: &quot;2019-11-20T01:59:37.478Z&quot;, 
-            &quot;VersionId&quot;: &quot;null&quot;, 
-            &quot;ETag&quot;: &quot;\&quot;348bd3ce10ec00ecc29d31ec97cd5839\&quot;&quot;, 
-            &quot;StorageClass&quot;: &quot;STANDARD&quot;, 
-            &quot;Key&quot;: &quot;test-key-1&quot;, 
-            &quot;Owner&quot;: {
-                &quot;DisplayName&quot;: &quot;rgwuser02&quot;, 
-                &quot;ID&quot;: &quot;rgwuser02&quot;
-            }, 
-            &quot;IsLatest&quot;: true, 
-            &quot;Size&quot;: 4
-        }
-    ]
-}
-</code></pre><p>删除该对象：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api delete-object --bucket test-bucket-2 --key test-key-1
-</code></pre><p>再次查看bucket里面对象的信息：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api list-object-versions --bucket test-bucket-2
-</code></pre><p>可以看到对象被永久删除了。</p>
-<p>下面看下开启多版本后删除对象情况，新建一个test-bucket-3 bucket，并开启多版本：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api create-bucket --bucket test-bucket-3
-[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api put-bucket-versioning --bucket test-bucket-3 --versioning-configuration Status=Enabled
-</code></pre><p>上传一个对象：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api put-object --bucket test-bucket-3 --key test-key-1 --body /tmp/test-2
-{
-    &quot;ETag&quot;: &quot;\&quot;348bd3ce10ec00ecc29d31ec97cd5839\&quot;&quot;
-}
-</code></pre><p>删除这个对象：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api delete-object --bucket test-bucket-3 --key test-key-1
-{
-    &quot;VersionId&quot;: &quot;ymH3s-OeK.D4kNAHaj8l8laPRn5hFtM&quot;, 
-    &quot;DeleteMarker&quot;: true
-}
-</code></pre><p>查看bucket里面对象信息：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api list-object-versions --bucket test-bucket-3
-{
-    &quot;DeleteMarkers&quot;: [
-        {
-            &quot;Owner&quot;: {
-                &quot;DisplayName&quot;: &quot;rgwuser02&quot;, 
-                &quot;ID&quot;: &quot;rgwuser02&quot;
-            }, 
-            &quot;IsLatest&quot;: true, 
-            &quot;VersionId&quot;: &quot;ymH3s-OeK.D4kNAHaj8l8laPRn5hFtM&quot;, 
-            &quot;Key&quot;: &quot;test-key-1&quot;, 
-            &quot;LastModified&quot;: &quot;2019-11-20T02:08:10.572Z&quot;
-        }
-    ], 
-    &quot;Versions&quot;: [
-        {
-            &quot;LastModified&quot;: &quot;2019-11-20T02:06:13.742Z&quot;, 
-            &quot;VersionId&quot;: &quot;d2-tVH26q4tfS-a5gn7qFsPJ.tMgYq1&quot;, 
-            &quot;ETag&quot;: &quot;\&quot;348bd3ce10ec00ecc29d31ec97cd5839\&quot;&quot;, 
-            &quot;StorageClass&quot;: &quot;STANDARD&quot;, 
-            &quot;Key&quot;: &quot;test-key-1&quot;, 
-            &quot;Owner&quot;: {
-                &quot;DisplayName&quot;: &quot;rgwuser02&quot;, 
-                &quot;ID&quot;: &quot;rgwuser02&quot;
-            }, 
-            &quot;IsLatest&quot;: false, 
-            &quot;Size&quot;: 4
-        }
-    ]
-}
-</code></pre><p>看到在DeleteMarkers下增加了一个标记对象信息，这个DeleteMarkers下面的信息只是用来标记哪些对象被删除过，暂时没发现有其他用处。然后把被删除对象的IsLatest字段变成了false（可以把这个对象恢复到当前最新版本），然后尝试获取该对象：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api get-object --bucket test-bucket-3 --key test-key-1 test-key-1.out
-An error occurred (NoSuchKey) when calling the GetObject operation: Unknown
-</code></pre><p>看到默认是获取不到对象了（可以指定version-id去获取），但是对象数据还是保留在rgw里面。开启多版本时永久删除对象方式就是指定version-id参数：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api delete-object --bucket test-bucket-3 --key test-key-1 --version-id d2-tVH26q4tfS-a5gn7qFsPJ.tMgYq1
-{
-    &quot;VersionId&quot;: &quot;d2-tVH26q4tfS-a5gn7qFsPJ.tMgYq1&quot;
-}
-</code></pre><h3 id="2-4、恢复对象"><a href="#2-4、恢复对象" class="headerlink" title="2.4、恢复对象"></a>2.4、恢复对象</h3><blockquote>
-<p>先说结论：恢复一个对象，推荐的方法是copy你想恢复的对象版本到当前的bucket里面，那么该对象就是当前最新的了。</p>
-</blockquote>
-<p>创建一个test-bucket-4：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api create-bucket --bucket test-bucket-4
-</code></pre><p>开启多版本：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api put-bucket-versioning --bucket test-bucket-4 --versioning-configuration Status=Enabled
-</code></pre><p>上传一个对象：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api put-object --bucket test-bucket-4 --key test-key-1 --body /tmp/test-2
-{
-    &quot;ETag&quot;: &quot;\&quot;348bd3ce10ec00ecc29d31ec97cd5839\&quot;&quot;
-}
-</code></pre><p>查看对象信息：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api list-object-versions --bucket test-bucket-4
-{
-    &quot;Versions&quot;: [
-        {
-            &quot;LastModified&quot;: &quot;2019-11-22T06:20:05.328Z&quot;, 
-            &quot;VersionId&quot;: &quot;CIkac6aeClGjppAcBpRvFKPQACWvdny&quot;, 
-            &quot;ETag&quot;: &quot;\&quot;348bd3ce10ec00ecc29d31ec97cd5839\&quot;&quot;, 
-            &quot;StorageClass&quot;: &quot;STANDARD&quot;, 
-            &quot;Key&quot;: &quot;test-key-1&quot;, 
-            &quot;Owner&quot;: {
-                &quot;DisplayName&quot;: &quot;rgwuser02&quot;, 
-                &quot;ID&quot;: &quot;rgwuser02&quot;
-            }, 
-            &quot;IsLatest&quot;: true, 
-            &quot;Size&quot;: 4
-        }
-    ]
-}
-</code></pre><p>删除这个对象：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api delete-object --bucket test-bucket-4 --key test-key-1
-{
-    &quot;VersionId&quot;: &quot;pwUBcmPcwRh2BnXOVB4juJcQGN7vkrL&quot;, 
-    &quot;DeleteMarker&quot;: true
-}
-</code></pre><p>恢复对象到之前的版本：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api copy-object --bucket test-bucket-4 --copy-source test-bucket-4/test-key-1?versionId=CIkac6aeClGjppAcBpRvFKPQACWvdny --key test-key-1
-{
-    &quot;CopyObjectResult&quot;: {
-        &quot;LastModified&quot;: &quot;2019-11-22T06:22:35.892Z&quot;, 
-        &quot;ETag&quot;: &quot;348bd3ce10ec00ecc29d31ec97cd5839&quot;
-    }
-}
-</code></pre><p>查看对象信息，可以看到版本为9bThYMWjdOYtQh8mmYzyulzFcOQoEwn的对象已经是当前最新的对象了（IsLatest字段为true）：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api list-object-versions --bucket test-bucket-4
-{
-    &quot;DeleteMarkers&quot;: [
-        {
-            &quot;Owner&quot;: {
-                &quot;DisplayName&quot;: &quot;rgwuser02&quot;, 
-                &quot;ID&quot;: &quot;rgwuser02&quot;
-            }, 
-            &quot;IsLatest&quot;: false, 
-            &quot;VersionId&quot;: &quot;pwUBcmPcwRh2BnXOVB4juJcQGN7vkrL&quot;, 
-            &quot;Key&quot;: &quot;test-key-1&quot;, 
-            &quot;LastModified&quot;: &quot;2019-11-22T06:20:36.817Z&quot;
-        }
-    ], 
-    &quot;Versions&quot;: [
-        {
-            &quot;LastModified&quot;: &quot;2019-11-22T06:22:35.892Z&quot;, 
-            &quot;VersionId&quot;: &quot;9bThYMWjdOYtQh8mmYzyulzFcOQoEwn&quot;, 
-            &quot;ETag&quot;: &quot;\&quot;348bd3ce10ec00ecc29d31ec97cd5839\&quot;&quot;, 
-            &quot;StorageClass&quot;: &quot;STANDARD&quot;, 
-            &quot;Key&quot;: &quot;test-key-1&quot;, 
-            &quot;Owner&quot;: {
-                &quot;DisplayName&quot;: &quot;rgwuser02&quot;, 
-                &quot;ID&quot;: &quot;rgwuser02&quot;
-            }, 
-            &quot;IsLatest&quot;: true, 
-            &quot;Size&quot;: 4
-        }, 
-        {
-            &quot;LastModified&quot;: &quot;2019-11-22T06:20:05.328Z&quot;, 
-            &quot;VersionId&quot;: &quot;CIkac6aeClGjppAcBpRvFKPQACWvdny&quot;, 
-            &quot;ETag&quot;: &quot;\&quot;348bd3ce10ec00ecc29d31ec97cd5839\&quot;&quot;, 
-            &quot;StorageClass&quot;: &quot;STANDARD&quot;, 
-            &quot;Key&quot;: &quot;test-key-1&quot;, 
-            &quot;Owner&quot;: {
-                &quot;DisplayName&quot;: &quot;rgwuser02&quot;, 
-                &quot;ID&quot;: &quot;rgwuser02&quot;
-            }, 
-            &quot;IsLatest&quot;: false, 
-            &quot;Size&quot;: 4
-        }
-    ]
-}
-</code></pre><h3 id="2-5、关闭多版本"><a href="#2-5、关闭多版本" class="headerlink" title="2.5、关闭多版本"></a>2.5、关闭多版本</h3><blockquote>
-<p>先说结论：关闭多版本后，上传对象会覆盖当前最新的对象信息，并且删除对象时会删除version-id是null的对象信息。</p>
-</blockquote>
-<p>创建一个bucket：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api create-bucket --bucket test-bucket-6
-</code></pre><p>开启多版本：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api put-bucket-versioning --bucket test-bucket-6 --versioning-configuration Status=Enabled
-</code></pre><p>关闭多版本：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api put-bucket-versioning --bucket test-bucket-6 --versioning-configuration Status=Suspended
-</code></pre><p>上传一个对象：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api put-object --bucket test-bucket-6 --key test-key-1 --body /tmp/test-2
-{
-    &quot;ETag&quot;: &quot;\&quot;348bd3ce10ec00ecc29d31ec97cd5839\&quot;&quot;
-}
-</code></pre><p>查看对象信息：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api list-object-versions --bucket test-bucket-6
-{
-    &quot;Versions&quot;: [
-        {
-            &quot;LastModified&quot;: &quot;2019-11-22T07:42:23.645Z&quot;, 
-            &quot;VersionId&quot;: &quot;null&quot;, 
-            &quot;ETag&quot;: &quot;\&quot;348bd3ce10ec00ecc29d31ec97cd5839\&quot;&quot;, 
-            &quot;StorageClass&quot;: &quot;STANDARD&quot;, 
-            &quot;Key&quot;: &quot;test-key-1&quot;, 
-            &quot;Owner&quot;: {
-                &quot;DisplayName&quot;: &quot;rgwuser02&quot;, 
-                &quot;ID&quot;: &quot;rgwuser02&quot;
-            }, 
-            &quot;IsLatest&quot;: true, 
-            &quot;Size&quot;: 4
-        }
-    ]
-}
-</code></pre><p>再次上传一个对象：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api put-object --bucket test-bucket-6 --key test-key-1 --body /tmp/test-3
-{
-    &quot;ETag&quot;: &quot;\&quot;40b134ab8a3dee5dd9760a7805fd495c\&quot;&quot;
-}
-</code></pre><p>查看对象信息,可以看到关闭多版本之后，再次上传对象会覆盖之前的对象信息：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api list-object-versions --bucket test-bucket-6
-{
-    &quot;Versions&quot;: [
-        {
-            &quot;LastModified&quot;: &quot;2019-11-22T07:42:36.041Z&quot;, 
-            &quot;VersionId&quot;: &quot;null&quot;, 
-            &quot;ETag&quot;: &quot;\&quot;40b134ab8a3dee5dd9760a7805fd495c\&quot;&quot;, 
-            &quot;StorageClass&quot;: &quot;STANDARD&quot;, 
-            &quot;Key&quot;: &quot;test-key-1&quot;, 
-            &quot;Owner&quot;: {
-                &quot;DisplayName&quot;: &quot;rgwuser02&quot;, 
-                &quot;ID&quot;: &quot;rgwuser02&quot;
-            }, 
-            &quot;IsLatest&quot;: true, 
-            &quot;Size&quot;: 4
-        }
-    ]
-}
-</code></pre><p>此时开启多版本：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api put-bucket-versioning --bucket test-bucket-6 --versioning-configuration Status=Enabled
-</code></pre><p>上传一个对象：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api put-object --bucket test-bucket-6 --key test-key-1 --body /tmp/test-4
-{
-    &quot;ETag&quot;: &quot;\&quot;45a62d3d5d3e946250904697486591bc\&quot;&quot;
-}
-</code></pre><p>查看对象信息：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api list-object-versions --bucket test-bucket-6
-{
-    &quot;Versions&quot;: [
-        {
-            &quot;LastModified&quot;: &quot;2019-11-22T07:43:06.724Z&quot;, 
-            &quot;VersionId&quot;: &quot;JGTD3E5hznLQLprYC7pH3fGhYzId8Q6&quot;, 
-            &quot;ETag&quot;: &quot;\&quot;45a62d3d5d3e946250904697486591bc\&quot;&quot;, 
-            &quot;StorageClass&quot;: &quot;STANDARD&quot;, 
-            &quot;Key&quot;: &quot;test-key-1&quot;, 
-            &quot;Owner&quot;: {
-                &quot;DisplayName&quot;: &quot;rgwuser02&quot;, 
-                &quot;ID&quot;: &quot;rgwuser02&quot;
-            }, 
-            &quot;IsLatest&quot;: true, 
-            &quot;Size&quot;: 4
-        }, 
-        {
-            &quot;LastModified&quot;: &quot;2019-11-22T07:42:36.041Z&quot;, 
-            &quot;VersionId&quot;: &quot;null&quot;, 
-            &quot;ETag&quot;: &quot;\&quot;40b134ab8a3dee5dd9760a7805fd495c\&quot;&quot;, 
-            &quot;StorageClass&quot;: &quot;STANDARD&quot;, 
-            &quot;Key&quot;: &quot;test-key-1&quot;, 
-            &quot;Owner&quot;: {
-                &quot;DisplayName&quot;: &quot;rgwuser02&quot;, 
-                &quot;ID&quot;: &quot;rgwuser02&quot;
-            }, 
-            &quot;IsLatest&quot;: false, 
-            &quot;Size&quot;: 4
-        }
-    ]
-}
-</code></pre><p>关闭多版本：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api put-bucket-versioning --bucket test-bucket-6 --versioning-configuration Status=Suspended
-</code></pre><p>删除对象：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api delete-object --bucket test-bucket-6 --key test-key-1
-{
-    &quot;VersionId&quot;: &quot;i6BI5Yzm07lX2A.vwP.ttGuaudC7h3K&quot;, 
-    &quot;DeleteMarker&quot;: true
-}
-</code></pre><p>查看对象信息，这里可以看到，关闭多版本后，删除对象时，如果不指定version-id，会删除version-id为null的对象：</p>
-<pre><code>[root@ceph06 ~]# aws --endpoint=http://192.168.10.30:9001 s3api list-object-versions --bucket test-bucket-6
-{
-    &quot;DeleteMarkers&quot;: [
-        {
-            &quot;Owner&quot;: {
-                &quot;DisplayName&quot;: &quot;rgwuser02&quot;, 
-                &quot;ID&quot;: &quot;rgwuser02&quot;
-            }, 
-            &quot;IsLatest&quot;: true, 
-            &quot;VersionId&quot;: &quot;null&quot;, 
-            &quot;Key&quot;: &quot;test-key-1&quot;, 
-            &quot;LastModified&quot;: &quot;2019-11-22T07:47:34.591Z&quot;
-        }
-    ], 
-    &quot;Versions&quot;: [
-        {
-            &quot;LastModified&quot;: &quot;2019-11-22T07:43:06.724Z&quot;, 
-            &quot;VersionId&quot;: &quot;JGTD3E5hznLQLprYC7pH3fGhYzId8Q6&quot;, 
-            &quot;ETag&quot;: &quot;\&quot;45a62d3d5d3e946250904697486591bc\&quot;&quot;, 
-            &quot;StorageClass&quot;: &quot;STANDARD&quot;, 
-            &quot;Key&quot;: &quot;test-key-1&quot;, 
-            &quot;Owner&quot;: {
-                &quot;DisplayName&quot;: &quot;rgwuser02&quot;, 
-                &quot;ID&quot;: &quot;rgwuser02&quot;
-            }, 
-            &quot;IsLatest&quot;: false, 
-            &quot;Size&quot;: 4
-        }
-    ]
-}
-</code></pre>
-      
-
-      
-    </div>
-    <div class="article-info article-info-index">
-      
-      
-      
-
-      
-        <p class="article-more-link">
-          <a class="article-more-a" href="/2021/02/24/RGW对象版本控制（多版本）/">展开全文 >></a>
         </p>
       
 

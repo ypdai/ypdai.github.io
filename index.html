@@ -144,6 +144,83 @@
           <div id="js-content" class="content-ll">
             
   
+    <article id="post-rgw：数据访问加速（D3N）" class="article article-type-post  article-index" itemscope itemprop="blogPost">
+  <div class="article-inner">
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="article-title" href="/2021/09/14/rgw：数据访问加速（D3N）/">rgw：数据访问加速（D3N）</a>
+    </h1>
+  
+
+        
+        <a href="/2021/09/14/rgw：数据访问加速（D3N）/" class="archive-article-date">
+  	<time datetime="2021-09-14T07:59:04.323Z" itemprop="datePublished"><i class="icon-calendar icon"></i>2021-09-14</time>
+</a>
+        
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h2 id="介绍"><a href="#介绍" class="headerlink" title="介绍"></a>介绍</h2><p>D3N全称是Datacenter-Data-Delivery Network (D3N) ，简单理解是在rgw网关节点上把存储在rados集群的数据缓存起来，这种对于rgw网关和rados集群分离部署的场景效果非常好，少了rgw网关到rados集群的网络开销和rados集群读取数据的开销。</p>
+<p>P版已经release到<a href="https://docs.ceph.com/en/latest/releases/pacific#v16-2-5-pacific" target="_blank" rel="noopener">16.2.5</a>，但是这个功能没有跟着release，还在开发中。</p>
+<h2 id="配置"><a href="#配置" class="headerlink" title="配置"></a>配置</h2><p>在rgw网关节点操作，假设/dev/sdd1是nvme ssd分区</p>
+<p>1、mkdir -p /mnt/nvme0/</p>
+<p>2、mount /dev/sdd1 /mnt/nvme0/</p>
+<p>3、mkdir -p /mnt/nvme0/rgw_datacache/client.rgw.8000/</p>
+<p>4、修改ceph.conf，在[client.rgw.8000]下增加如下配置 :</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">[client.rgw.8000]</span><br><span class="line">rgw_d3n_l1_local_datacache_enabled = true	# 表示开启D3N功能</span><br><span class="line">rgw_d3n_l1_datacache_persistent_path = &quot;/mnt/nvme0/rgw_datacache/client.rgw.8000/&quot;	# 该rgw实例缓存数据的目录 rgw_d3n_l1_datacache_size = 10737418240	# 缓存大小是10G，单位bytes</span><br><span class="line">rgw_d3n_l1_eviction_policy = lru	# 缓存淘汰策略，有两种：random和lru，默认是lru</span><br></pre></td></tr></table></figure>
+<p>如果网关节点上有多个rgw实例，那么将可以把每个rgw实例的缓存目录分开，例如在[client.rgw.8001]的rgw_d3n_l1_datacache_ persistent_ path =”/mnt/nvme0/rgw_datacache/client.rgw.8001/”。</p>
+<h2 id="日志"><a href="#日志" class="headerlink" title="日志"></a>日志</h2><p>日志也会打在在radosgw.xx.log中，D3N相关的日志行包含了D3N关键字。可以通过debug_rgw_datacache调整日志界别，最高30。</p>
+<h2 id="几个注意点"><a href="#几个注意点" class="headerlink" title="几个注意点"></a>几个注意点</h2><p>1、每次重启rgw网关实例时，都会清除其对应的缓存目录的数据。</p>
+<p>2、不会缓存被rgw网关压缩的对象。</p>
+<p>3、不会缓存由rgw网关加密的对象。</p>
+<p>4、如果rgw_max_chunk_size配置与rgw_obj_stripe_size配置不同，D3N将会失效。</p>
+<p>这里还没有本地实测，后面搞下，参考：<a href="https://docs.ceph.com/en/latest/radosgw/d3n_datacache/" target="_blank" rel="noopener">https://docs.ceph.com/en/latest/radosgw/d3n_datacache/</a></p>
+
+      
+
+      
+    </div>
+    <div class="article-info article-info-index">
+      
+      
+      
+
+      
+        <p class="article-more-link">
+          <a class="article-more-a" href="/2021/09/14/rgw：数据访问加速（D3N）/">展开全文 >></a>
+        </p>
+      
+
+      
+      <div class="clearfix"></div>
+    </div>
+  </div>
+</article>
+
+<aside class="wrap-side-operation">
+    <div class="mod-side-operation">
+        
+        <div class="jump-container" id="js-jump-container" style="display:none;">
+            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
+                <i class="icon-font icon-back"></i>
+            </a>
+            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
+                <i class="icon-font icon-plane jump-plane"></i>
+            </div>
+        </div>
+        
+        
+    </div>
+</aside>
+
+
+
+
+  
     <article id="post-rgw：数据加密" class="article article-type-post  article-index" itemscope itemprop="blogPost">
   <div class="article-inner">
     
@@ -1192,184 +1269,6 @@ if __name__ == &apos;__main__&apos;:
       
         <p class="article-more-link">
           <a class="article-more-a" href="/2021/02/24/如何恢复cephfs数据/">展开全文 >></a>
-        </p>
-      
-
-      
-      <div class="clearfix"></div>
-    </div>
-  </div>
-</article>
-
-<aside class="wrap-side-operation">
-    <div class="mod-side-operation">
-        
-        <div class="jump-container" id="js-jump-container" style="display:none;">
-            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
-                <i class="icon-font icon-back"></i>
-            </a>
-            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
-                <i class="icon-font icon-plane jump-plane"></i>
-            </div>
-        </div>
-        
-        
-    </div>
-</aside>
-
-
-
-
-  
-    <article id="post-如何处理PG inconsistent状态" class="article article-type-post  article-index" itemscope itemprop="blogPost">
-  <div class="article-inner">
-    
-      <header class="article-header">
-        
-  
-    <h1 itemprop="name">
-      <a class="article-title" href="/2021/02/24/如何处理PG inconsistent状态/">如何处理PG inconsistent状态</a>
-    </h1>
-  
-
-        
-        <a href="/2021/02/24/如何处理PG inconsistent状态/" class="archive-article-date">
-  	<time datetime="2021-02-24T11:52:14.699Z" itemprop="datePublished"><i class="icon-calendar icon"></i>2021-02-24</time>
-</a>
-        
-      </header>
-    
-    <div class="article-entry" itemprop="articleBody">
-      
-        <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>这里通过实验操作，说明下集群出现pg inconsistent状态的原因和处理办法。</p>
-<h2 id="实验操作"><a href="#实验操作" class="headerlink" title="实验操作"></a>实验操作</h2><h3 id="1、准备测试集群"><a href="#1、准备测试集群" class="headerlink" title="1、准备测试集群"></a>1、准备测试集群</h3><p>下面是我准备的3节点测试集群</p>
-<pre><code>[root@ceph01 23.1_head]# ceph -s
-    cluster 29978a95-87f1-4a0c-96fa-2369e985bfbe
-     health HEALTH_OK
-     monmap e1: 1 mons at {ceph01=192.168.10.20:6789/0}
-            election epoch 13, quorum 0 ceph01
-      fsmap e44: 1/1/1 up {0=ceph01=up:active}
-     osdmap e462: 7 osds: 7 up, 7 in
-            flags sortbitwise,require_jewel_osds
-      pgmap v142266: 464 pgs, 15 pools, 156 MB data, 272 objects
-            1153 MB used, 103 GB / 104 GB avail
-                 464 active+clean
-
-[root@ceph01 23.1_head]# ceph osd tree
-ID WEIGHT  TYPE NAME       UP/DOWN REWEIGHT PRIMARY-AFFINITY 
--1 0.08752 root default                                      
--2 0.02917     host ceph01                                   
- 0 0.01459         osd.0        up  1.00000          1.00000 
- 1 0.01459         osd.1        up  1.00000          1.00000 
--3 0.02917     host ceph02                                   
- 2 0.01459         osd.2        up  1.00000          1.00000 
- 3 0.01459         osd.3        up  1.00000          1.00000 
--4 0.02917     host ceph03                                   
- 4 0.01459         osd.4        up  1.00000          1.00000 
- 5 0.01459         osd.5        up  1.00000          1.00000 
- 6       0 osd.6                up  1.00000          1.00000
-</code></pre><h3 id="2、模拟pg-inconsistent状态"><a href="#2、模拟pg-inconsistent状态" class="headerlink" title="2、模拟pg inconsistent状态"></a>2、模拟pg inconsistent状态</h3><p>随便选择一个pg，我这里选择的是23.1这个pg，该pg分布在osd.2和osd.2上面：</p>
-<pre><code>[root@ceph01 23.1_head]# ceph pg map 23.1
-osdmap e462 pg 23.1 (23.1) -&gt; up [0,2] acting [0,2]
-</code></pre><p>在主本osd.0所在节点上进入pg 23.1的目录，并选择一个对象获取其所有的xattrs：</p>
-<pre><code>[root@ceph01 23.1_head]# pwd
-/var/lib/ceph/osd/ceph-0/current/23.1_head
-[root@ceph02 23.1_head]# getfattr -m &quot;.*&quot; 475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2\\u222__head_81BA0161__17 
-# file: 475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2\134u222__head_81BA0161__17
-user.ceph._
-user.ceph._@1
-user.ceph._user.rgw.acl
-user.ceph._user.rgw.etag
-user.ceph._user.rgw.idtag
-user.ceph._user.rgw.manifest
-user.ceph._user.rgw.manifest@1
-user.ceph._user.rgw.manifest@2
-user.ceph._user.rgw.pg_ver
-user.ceph._user.rgw.source_zone
-user.ceph._user.rgw.unix-key1
-user.ceph._user.rgw.unix1
-user.ceph.snapset
-user.cephos.spill_out
-user.foo
-</code></pre><p>然后获取其中一个xattr：</p>
-<pre><code>[root@ceph01 23.1_head]# getfattr -n user.ceph._user.rgw.idtag 475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2\\u222__head_81BA0161__17
-# file: 475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2\134u222__head_81BA0161__17
-user.ceph._user.rgw.idtag=&quot;_oamSgdWXhjtMSTEP3OI9g1dL42ZQNx11&quot;
-</code></pre><p>到pg 23.1的副本osd上，同样获取下这个对象的xattr：</p>
-<pre><code>[root@ceph02 23.1_head]# getfattr -n user.ceph._user.rgw.idtag 475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2\\u222__head_81BA0161__17
-# file: 475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2\134u222__head_81BA0161__17
-user.ceph._user.rgw.idtag=&quot;_oamSgdWXhjtMSTEP3OI9g1dL42ZQNx11&quot;
-</code></pre><p>可以看到对象的user.ceph._user.rgw.idtag扩展属性在主副本上是一样的，这就是正常情况。下面我们手动把主本的扩展属性改下：</p>
-<pre><code>[root@ceph01 23.1_head]# setfattr -n user.ceph._user.rgw.idtag -v &quot;_oamSgdWXhjtMSTEP3OI9g1dL42ZQNx12&quot; 475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2\\u222__head_81BA0161__17
-</code></pre><p>然后手动触发scrub：</p>
-<pre><code>[root@ceph01 23.1_head]# ceph pg scrub 23.1
-instructing pg 23.1 on osd.0 to scrub
-</code></pre><p>然后再看集群状态变成了ERR：</p>
-<pre><code>[root@ceph01 23.1_head]# ceph -s
-    cluster 29978a95-87f1-4a0c-96fa-2369e985bfbe
-     health HEALTH_ERR
-            1 pgs inconsistent
-            1 scrub errors
-     monmap e1: 1 mons at {ceph01=192.168.10.20:6789/0}
-            election epoch 13, quorum 0 ceph01
-      fsmap e44: 1/1/1 up {0=ceph01=up:active}
-     osdmap e462: 7 osds: 7 up, 7 in
-            flags sortbitwise,require_jewel_osds
-      pgmap v142290: 464 pgs, 15 pools, 156 MB data, 272 objects
-            1153 MB used, 103 GB / 104 GB avail
-                 463 active+clean
-                   1 active+clean+inconsistent
-</code></pre><p>此时在osd.0的日志里面可以看到scrub的信息：</p>
-<pre><code>2019-02-26 17:33:49.841272 7f4976219700  0 log_channel(cluster) log [INF] : 23.1 scrub starts
-2019-02-26 17:33:49.842529 7f4976219700 -1 log_channel(cluster) log [ERR] : 23.1 : soid 23:86805d81:::475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2_222:head attr value mismatch &apos;_user.rgw.idtag&apos;
-2019-02-26 17:33:49.842613 7f4976219700 -1 log_channel(cluster) log [ERR] : 23.1 scrub 0 missing, 1 inconsistent objects
-2019-02-26 17:33:49.842619 7f4976219700 -1 log_channel(cluster) log [ERR] : 23.1 scrub 1 errors
-</code></pre><p>上面的信息告诉我们23.1这个pg里面的475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2_222这个对象的_user.rgw.idtag属性在主副本之间不一致。</p>
-<p>这里可以知道pg出现inconsistent状态时，是由于pg里面的对象的主副本之间出现数据或元数据不一致导致的（我们上面是修改了其中一个副本的xattr，也可以直接删掉某一个xattr）。</p>
-<p>下面看下如何处理这种情况。</p>
-<h3 id="3、如何解决"><a href="#3、如何解决" class="headerlink" title="3、如何解决"></a>3、如何解决</h3><h4 id="3-1、方式一"><a href="#3-1、方式一" class="headerlink" title="3.1、方式一"></a>3.1、方式一</h4><p>上面我们通过osd日志知道哪个pg出现了问题（也可以直接通过ceph health detail命令查看），然后对这个pg执行repair操作即可：</p>
-<pre><code>[root@ceph01 23.1_head]# ceph pg repair 23.1
-instructing pg 23.1 on osd.0 to repair
-</code></pre><p>一般情况下，等待一小会儿，集群就可以恢复正常了。</p>
-<p><strong>这里要注意：repair会去选择权威的副本，然后把选择出来的权威副本上属性同步到其他副本上去。</strong></p>
-<p>那我们如何知道权威副本是哪个呢？可以把debug_osd开到10，然后执行完ceph pg scrub {pgid}，然后在pg的主osd日志里面可以看到如下信息：</p>
-<pre><code>[root@ceph01 ~]# cat /var/log/ceph/ceph-osd.0.log|grep auth
-2019-02-26 18:22:33.849430 7f4976219700 10 osd.0 pg_epoch: 462 pg[23.1( v 367&apos;28 (0&apos;0,367&apos;28] local-les=460 n=1 ec=181 les/c/f 460/462/0 459/459/383) [0,2] r=0 lpr=459 crt=367&apos;28 lcod 0&apos;0 mlcod 0&apos;0 active+clean+scrubbing] be_select_auth_object: **selecting osd 0** for obj 23:86805d81:::475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2_222:head with oi 23:86805d81:::475caa43-5052-4d27-8ffb-897db2b8a2ec.84114.2_222:head(367&apos;25 client.84123.0:989 dirty|data_digest|omap_digest s 0 uv 25 dd ffffffff od ffffffff alloc_hint [0 0])
-2019-02-26 18:22:33.849718 7f4976219700 10 osd.0 pg_epoch: 462 pg[23.1( v 367&apos;28 (0&apos;0,367&apos;28] local-les=460 n=1 ec=181 les/c/f 460/462/0 459/459/383) [0,2] r=0 lpr=459 crt=367&apos;28 lcod 0&apos;0 mlcod 0&apos;0 active+clean+scrubbing] scrub_process_inconsistent: checking authoritative
-</code></pre><p>从上面的日志中可以看出osd.0被选成了权威副本。</p>
-<h4 id="3-2、方式二"><a href="#3-2、方式二" class="headerlink" title="3.2、方式二"></a>3.2、方式二</h4><p>1.查看pg的详细错误信息</p>
-<pre><code>[root@ceph01 0.14_head]# rados list-inconsistent-obj 0.14 --format=json-pretty
-</code></pre><p>2.通过rados get/put的方式修复</p>
-<pre><code>先把该对象获取出来
-[root@ceph01 0.14_head]# rados -p rbd get rbd_data.d37a6b8b4567.0000000000000017 /tmp/rbd_data.d37a6b8b4567.0000000000000017
-
-然后再put进去
-[root@ceph01 0.14_head]# rados -p rbd put rbd_data.d37a6b8b4567.0000000000000017 /tmp/rbd_data.d37a6b8b4567.0000000000000017
-</code></pre><h4 id="3-3、方式三"><a href="#3-3、方式三" class="headerlink" title="3.3、方式三"></a>3.3、方式三</h4><p>如果经过上面的操作，集群仍没有达到OK状态，可以尝试用下面这种方式进行修复。（参考：<a href="https://lihaijing.gitbooks.io/ceph-handbook/content/Troubleshooting/troubleshooting_pg.html）" target="_blank" rel="noopener">https://lihaijing.gitbooks.io/ceph-handbook/content/Troubleshooting/troubleshooting_pg.html）</a></p>
-<p>1、停掉数据不一致且非权威副本所属的 osd （如何知道哪个是权威副本，请参考我上面的说明）。</p>
-<pre><code>$ systemctl stop ceph-osd@{osdid}
-</code></pre><p>2、刷新该 osd 的日志。</p>
-<pre><code>$ ceph-osd -i {osdid} --flush-journal
-</code></pre><p>3、将不一致的 object 移除。</p>
-<pre><code>$ mv /var/lib/ceph/osd/ceph-{osdid}/current/{pgid}_head/ {object-name} /home
-</code></pre><p>4、重新启动该 osd 。</p>
-<pre><code>$ systemctl start ceph-osd@{osdid}
-</code></pre><p>5、重新执行修复命令。</p>
-<pre><code>$ ceph pg repair {pgid}
-</code></pre><h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>上面是两种修复的方法，基本的思想是一样的，就是先找出不一致（inconsistent）的对象，然后对比这个对象的主副本数据哪个更新，然后使用正确的副本对象去修复其他有问题的副本对象。</p>
-
-      
-
-      
-    </div>
-    <div class="article-info article-info-index">
-      
-      
-      
-
-      
-        <p class="article-more-link">
-          <a class="article-more-a" href="/2021/02/24/如何处理PG inconsistent状态/">展开全文 >></a>
         </p>
       
 

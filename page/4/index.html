@@ -144,6 +144,218 @@
           <div id="js-content" class="content-ll">
             
   
+    <article id="post-Docker将Ceph的RBD作为数据卷使用" class="article article-type-post  article-index" itemscope itemprop="blogPost">
+  <div class="article-inner">
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="article-title" href="/2021/02/24/Docker将Ceph的RBD作为数据卷使用/">Docker将Ceph的RBD作为数据卷使用</a>
+    </h1>
+  
+
+        
+        <a href="/2021/02/24/Docker将Ceph的RBD作为数据卷使用/" class="archive-article-date">
+  	<time datetime="2021-02-24T11:52:11.615Z" itemprop="datePublished"><i class="icon-calendar icon"></i>2021-02-24</time>
+</a>
+        
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h3 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h3><p>最近想研究下如何将ceph的rbd块设备作为docker的数据卷使用，下面大概记录下研究过程和结果作为备忘，后面持续更新。</p>
+<h3 id="机器环境"><a href="#机器环境" class="headerlink" title="机器环境"></a>机器环境</h3><p>docker机器和ceph集群都是在centOS 7上部署的。</p>
+<pre><code># ceph集群（单机部署的）机器，机器名为node1
+[root@node1 ~]# cat /etc/redhat-release 
+CentOS Linux release 7.3.1611 (Core)
+
+# docker机器，主机名为ZTEST-163
+[root@ZTEST-163 ~]# cat /etc/redhat-release 
+CentOS Linux release 7.2.1511 (Core)
+
+# docker要求内核必须是3.10及以上的64为系统
+[root@ZTEST-163 ~]# uname -a
+Linux ZTEST-163 3.10.0-327.36.3.el7.x86_64 #1 SMP Mon Oct 24 16:09:20 UTC 2016 x86_64 x86_64 x86_64 GNU/Linux
+</code></pre><h3 id="ceph集群部署"><a href="#ceph集群部署" class="headerlink" title="ceph集群部署"></a>ceph集群部署</h3><p>ceph的部署过程可以参考我的<a href="https://ypdai.github.io/2018/04/11/Ceph%E7%9A%84%E9%83%A8%E7%BD%B2/">这篇文章</a>。这里我们在主机名为node1的机器上部署了ceph集群：</p>
+<pre><code>[root@node1 ~]# ceph -s
+cluster eaf47fa6-4529-44a9-8561-b38724408b3f
+ health HEALTH_OK
+ monmap e1: 1 mons at {node1=192.168.62.176:6789/0}
+        election epoch 1, quorum 0 node1
+ osdmap e23: 2 osds: 2 up, 2 in
+  pgmap v75: 64 pgs, 1 pools, 14768 kB data, 23 objects
+        10328 MB used, 30607 MB / 40936 MB avail
+              64 active+clean
+</code></pre><h3 id="在CEPH集群中创建名称为TEST1的RBD块设备"><a href="#在CEPH集群中创建名称为TEST1的RBD块设备" class="headerlink" title="在CEPH集群中创建名称为TEST1的RBD块设备"></a>在CEPH集群中创建名称为TEST1的RBD块设备</h3><pre><code>[root@node1 ~]# rbd create test1 --size 20000
+</code></pre><h3 id="Docker环境部署"><a href="#Docker环境部署" class="headerlink" title="Docker环境部署"></a>Docker环境部署</h3><p>更新yum源</p>
+<p>Base源:</p>
+<pre><code>[root@ZTEST-163 yum.repos.d]# cat CentOS-Base.repo
+# CentOS-Base.repo
+#
+# The mirror system uses the connecting IP address of the client and the
+# update status of each mirror to pick mirrors that are updated to and
+# geographically close to the client.  You should use this for CentOS updates
+# unless you are manually picking other mirrors.
+#
+# If the mirrorlist= does not work for you, as a fall back you can try the 
+# remarked out baseurl= line instead.
+#
+#
+
+[base]
+name=CentOS-$releasever - Base - mirrors.aliyun.com
+failovermethod=priority
+baseurl=http://mirrors.aliyun.com/centos/$releasever/os/$basearch/
+        http://mirrors.aliyuncs.com/centos/$releasever/os/$basearch/
+#mirrorlist=http://mirrorlist.centos.org/?release=$releasever&amp;arch=$basearch&amp;repo=os
+gpgcheck=1
+gpgkey=http://mirrors.aliyun.com/centos/RPM-GPG-KEY-CentOS-7
+
+#released updates 
+[updates]
+name=CentOS-$releasever - Updates - mirrors.aliyun.com
+failovermethod=priority
+baseurl=http://mirrors.aliyun.com/centos/$releasever/updates/$basearch/
+        http://mirrors.aliyuncs.com/centos/$releasever/updates/$basearch/
+#mirrorlist=http://mirrorlist.centos.org/?release=$releasever&amp;arch=$basearch&amp;repo=updates
+gpgcheck=1
+gpgkey=http://mirrors.aliyun.com/centos/RPM-GPG-KEY-CentOS-7
+
+#additional packages that may be useful
+[extras]
+name=CentOS-$releasever - Extras - mirrors.aliyun.com
+failovermethod=priority
+baseurl=http://mirrors.aliyun.com/centos/$releasever/extras/$basearch/
+        http://mirrors.aliyuncs.com/centos/$releasever/extras/$basearch/
+#mirrorlist=http://mirrorlist.centos.org/?release=$releasever&amp;arch=$basearch&amp;repo=extras
+gpgcheck=1
+gpgkey=http://mirrors.aliyun.com/centos/RPM-GPG-KEY-CentOS-7
+
+#additional packages that extend functionality of existing packages
+[centosplus]
+name=CentOS-$releasever - Plus - mirrors.aliyun.com
+failovermethod=priority
+baseurl=http://mirrors.aliyun.com/centos/$releasever/centosplus/$basearch/
+        http://mirrors.aliyuncs.com/centos/$releasever/centosplus/$basearch/
+#mirrorlist=http://mirrorlist.centos.org/?release=$releasever&amp;arch=$basearch&amp;repo=centosplus
+gpgcheck=1
+enabled=0
+gpgkey=http://mirrors.aliyun.com/centos/RPM-GPG-KEY-CentOS-7
+
+#contrib - packages by Centos Users
+[contrib]
+name=CentOS-$releasever - Contrib - mirrors.aliyun.com
+failovermethod=priority
+baseurl=http://mirrors.aliyun.com/centos/$releasever/contrib/$basearch/
+        http://mirrors.aliyuncs.com/centos/$releasever/contrib/$basearch/
+#mirrorlist=http://mirrorlist.centos.org/?release=$releasever&amp;arch=$basearch&amp;repo=contrib
+gpgcheck=1
+enabled=0
+gpgkey=http://mirrors.aliyun.com/centos/RPM-GPG-KEY-CentOS-7
+</code></pre><p>epel源：</p>
+<pre><code>[root@ZTEST-163 yum.repos.d]# cat epel.repo 
+[epel]
+name=Extra Packages for Enterprise Linux 7 - $basearch
+baseurl=http://mirrors.aliyun.com/epel/7/$basearch
+        http://mirrors.aliyuncs.com/epel/7/$basearch
+#mirrorlist=https://mirrors.fedoraproject.org/metalink?repo=epel-7&amp;arch=$basearch
+failovermethod=priority
+enabled=1
+gpgcheck=0
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-EPEL-7
+
+[epel-debuginfo]
+name=Extra Packages for Enterprise Linux 7 - $basearch - Debug
+baseurl=http://mirrors.aliyun.com/epel/7/$basearch/debug
+        http://mirrors.aliyuncs.com/epel/7/$basearch/debug
+#mirrorlist=https://mirrors.fedoraproject.org/metalink?repo=epel-debug-7&amp;arch=$basearch
+failovermethod=priority
+enabled=0
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-EPEL-7
+gpgcheck=0
+
+[epel-source]
+name=Extra Packages for Enterprise Linux 7 - $basearch - Source
+baseurl=http://mirrors.aliyun.com/epel/7/SRPMS
+        http://mirrors.aliyuncs.com/epel/7/SRPMS
+#mirrorlist=https://mirrors.fedoraproject.org/metalink?repo=epel-source-7&amp;arch=$basearch
+failovermethod=priority
+enabled=0
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-EPEL-7
+gpgcheck=0
+</code></pre><p>ceph源：</p>
+<pre><code>[root@ZTEST-163 yum.repos.d]# cat ceph.repo 
+[ceph]
+name=ceph
+baseurl=http://download.ceph.com/rpm-hammer/el7/x86_64/
+gpgcheck=0
+[ceph-noarch]
+name=cephnoarch
+baseurl=http://download.ceph.com/rpm-hammer/el7/noarch/
+gpgcheck=0
+</code></pre><p>docker源：</p>
+<pre><code>[root@ZTEST-163 yum.repos.d]# cat ghostcloud.repo 
+[dockerrepo]
+name=Docker Repository
+baseurl=https://yum.dockerproject.org/repo/main/centos/$releasever/
+enabled=1
+gpgcheck=1
+gpgkey=https://yum.dockerproject.org/gpg
+</code></pre><h3 id="安装DOCKER"><a href="#安装DOCKER" class="headerlink" title="安装DOCKER"></a>安装DOCKER</h3><pre><code>[root@ZTEST-163 yum.repos.d]# yum -y install docker-engine
+</code></pre><h3 id="安装CEPH客户端相关包"><a href="#安装CEPH客户端相关包" class="headerlink" title="安装CEPH客户端相关包"></a>安装CEPH客户端相关包</h3><pre><code>[root@ZTEST-163 yum.repos.d]# yum -y install librados-dev librbd-dev ceph-common
+</code></pre><h3 id="将CEPH集群的rbd块设备map到本地，格式化并mount到-mnt目录下"><a href="#将CEPH集群的rbd块设备map到本地，格式化并mount到-mnt目录下" class="headerlink" title="将CEPH集群的rbd块设备map到本地，格式化并mount到/mnt目录下"></a>将CEPH集群的rbd块设备map到本地，格式化并mount到/mnt目录下</h3><pre><code># 这一步是将ceph集群的配置文件cp过来，这样才能和集群通讯
+[root@ZTEST-163 yum.repos.d] scp root@192.168.62.176:/etc/ceph/ceph.conf /etc/ceph/
+[root@ZTEST-163 yum.repos.d]# rbd info test1
+[root@ZTEST-163 yum.repos.d]# rbd map test1
+[root@ZTEST-163 yum.repos.d]# rbd showmapped
+[root@ZTEST-163 yum.repos.d]# mkfs.xfs /dev/rbd0 
+[root@ZTEST-163 yum.repos.d]# mount /dev/rbd0 /mnt
+</code></pre><h3 id="将-mnt作为数据卷挂载到容器内部"><a href="#将-mnt作为数据卷挂载到容器内部" class="headerlink" title="将/mnt作为数据卷挂载到容器内部"></a>将/mnt作为数据卷挂载到容器内部</h3><pre><code># 将本机的/mnt目录挂载到容器内部的/mydata下，这样再容器内部将数据放到/mydata时实际上是将数据放到了本机的/mnt目录下，也就是放到ceph集群中。 容器退出之后，在/mnt目录下的数据也不会丢失
+docker run -it -v /mnt:/mydata ubuntu
+</code></pre><p>这里只是初步的试验下可用、可行性，里面应该还有很多坑吧，还有其他方式可以将ceph RBD和docker集成的，后面研究之后在补充。</p>
+
+      
+
+      
+    </div>
+    <div class="article-info article-info-index">
+      
+      
+      
+
+      
+        <p class="article-more-link">
+          <a class="article-more-a" href="/2021/02/24/Docker将Ceph的RBD作为数据卷使用/">展开全文 >></a>
+        </p>
+      
+
+      
+      <div class="clearfix"></div>
+    </div>
+  </div>
+</article>
+
+<aside class="wrap-side-operation">
+    <div class="mod-side-operation">
+        
+        <div class="jump-container" id="js-jump-container" style="display:none;">
+            <a href="javascript:void(0)" class="mod-side-operation__jump-to-top">
+                <i class="icon-font icon-back"></i>
+            </a>
+            <div id="js-jump-plan-container" class="jump-plan-container" style="top: -11px;">
+                <i class="icon-font icon-plane jump-plane"></i>
+            </div>
+        </div>
+        
+        
+    </div>
+</aside>
+
+
+
+
+  
     <article id="post-ceph三种客户端消息到rados的路径" class="article article-type-post  article-index" itemscope itemprop="blogPost">
   <div class="article-inner">
     
