@@ -166,7 +166,7 @@
       
         <h2 id="介绍"><a href="#介绍" class="headerlink" title="介绍"></a>介绍</h2><p>D3N全称是Datacenter-Data-Delivery Network (D3N) ，简单理解是在rgw网关节点上把存储在rados集群的数据缓存起来，这种对于rgw网关和rados集群分离部署的场景效果非常好，少了rgw网关到rados集群的网络开销和rados集群读取数据的开销。</p>
 <p>P版已经release到<a href="https://docs.ceph.com/en/latest/releases/pacific#v16-2-5-pacific" target="_blank" rel="noopener">16.2.5</a>，但是这个功能没有跟着release，还在开发中。</p>
-<h2 id="配置"><a href="#配置" class="headerlink" title="配置"></a>配置</h2><p>在rgw网关节点操作，假设/dev/sdd1是nvme ssd分区</p>
+<h2 id="配置"><a href="#配置" class="headerlink" title="配置"></a>配置</h2><p>配置起来还是很简单的，在rgw网关节点操作，假设/dev/sdd1是nvme ssd分区</p>
 <p>1、mkdir -p /mnt/nvme0/</p>
 <p>2、mount /dev/sdd1 /mnt/nvme0/</p>
 <p>3、mkdir -p /mnt/nvme0/rgw_datacache/client.rgw.8000/</p>

@@ -8,17 +8,17 @@
   <link rel="dns-prefetch" href="https://ypdai.github.io">
   <title>rgw：数据访问加速（D3N） | ypdai</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-  <meta name="description" content="介绍D3N全称是Datacenter-Data-Delivery Network (D3N) ，简单理解是在rgw网关节点上把存储在rados集群的数据缓存起来，这种对于rgw网关和rados集群分离部署的场景效果非常好，少了rgw网关到rados集群的网络开销和rados集群读取数据的开销。 P版已经release到16.2.5，但是这个功能没有跟着release，还在开发中。 配置在rgw网关">
+  <meta name="description" content="介绍D3N全称是Datacenter-Data-Delivery Network (D3N) ，简单理解是在rgw网关节点上把存储在rados集群的数据缓存起来，这种对于rgw网关和rados集群分离部署的场景效果非常好，少了rgw网关到rados集群的网络开销和rados集群读取数据的开销。 P版已经release到16.2.5，但是这个功能没有跟着release，还在开发中。 配置配置起来还是">
 <meta property="og:type" content="article">
 <meta property="og:title" content="rgw：数据访问加速（D3N）">
 <meta property="og:url" content="https://ypdai.github.io/2021/09/14/rgw：数据访问加速（D3N）/index.html">
 <meta property="og:site_name" content="ypdai">
-<meta property="og:description" content="介绍D3N全称是Datacenter-Data-Delivery Network (D3N) ，简单理解是在rgw网关节点上把存储在rados集群的数据缓存起来，这种对于rgw网关和rados集群分离部署的场景效果非常好，少了rgw网关到rados集群的网络开销和rados集群读取数据的开销。 P版已经release到16.2.5，但是这个功能没有跟着release，还在开发中。 配置在rgw网关">
+<meta property="og:description" content="介绍D3N全称是Datacenter-Data-Delivery Network (D3N) ，简单理解是在rgw网关节点上把存储在rados集群的数据缓存起来，这种对于rgw网关和rados集群分离部署的场景效果非常好，少了rgw网关到rados集群的网络开销和rados集群读取数据的开销。 P版已经release到16.2.5，但是这个功能没有跟着release，还在开发中。 配置配置起来还是">
 <meta property="og:locale" content="default">
-<meta property="og:updated_time" content="2021-09-14T08:07:48.052Z">
+<meta property="og:updated_time" content="2021-09-14T08:10:40.320Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="rgw：数据访问加速（D3N）">
-<meta name="twitter:description" content="介绍D3N全称是Datacenter-Data-Delivery Network (D3N) ，简单理解是在rgw网关节点上把存储在rados集群的数据缓存起来，这种对于rgw网关和rados集群分离部署的场景效果非常好，少了rgw网关到rados集群的网络开销和rados集群读取数据的开销。 P版已经release到16.2.5，但是这个功能没有跟着release，还在开发中。 配置在rgw网关">
+<meta name="twitter:description" content="介绍D3N全称是Datacenter-Data-Delivery Network (D3N) ，简单理解是在rgw网关节点上把存储在rados集群的数据缓存起来，这种对于rgw网关和rados集群分离部署的场景效果非常好，少了rgw网关到rados集群的网络开销和rados集群读取数据的开销。 P版已经release到16.2.5，但是这个功能没有跟着release，还在开发中。 配置配置起来还是">
   
     <link rel="alternative" href="/atom.xml" title="ypdai" type="application/atom+xml">
   
@@ -168,7 +168,7 @@
       
         <h2 id="介绍"><a href="#介绍" class="headerlink" title="介绍"></a>介绍</h2><p>D3N全称是Datacenter-Data-Delivery Network (D3N) ，简单理解是在rgw网关节点上把存储在rados集群的数据缓存起来，这种对于rgw网关和rados集群分离部署的场景效果非常好，少了rgw网关到rados集群的网络开销和rados集群读取数据的开销。</p>
 <p>P版已经release到<a href="https://docs.ceph.com/en/latest/releases/pacific#v16-2-5-pacific" target="_blank" rel="noopener">16.2.5</a>，但是这个功能没有跟着release，还在开发中。</p>
-<h2 id="配置"><a href="#配置" class="headerlink" title="配置"></a>配置</h2><p>在rgw网关节点操作，假设/dev/sdd1是nvme ssd分区</p>
+<h2 id="配置"><a href="#配置" class="headerlink" title="配置"></a>配置</h2><p>配置起来还是很简单的，在rgw网关节点操作，假设/dev/sdd1是nvme ssd分区</p>
 <p>1、mkdir -p /mnt/nvme0/</p>
 <p>2、mount /dev/sdd1 /mnt/nvme0/</p>
 <p>3、mkdir -p /mnt/nvme0/rgw_datacache/client.rgw.8000/</p>
