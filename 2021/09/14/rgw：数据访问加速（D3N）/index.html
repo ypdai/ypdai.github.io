@@ -15,7 +15,7 @@
 <meta property="og:site_name" content="ypdai">
 <meta property="og:description" content="介绍D3N全称是Datacenter-Data-Delivery Network (D3N) ，简单理解是在rgw网关节点上把存储在rados集群的数据缓存起来，这种对于rgw网关和rados集群分离部署的场景效果非常好，少了rgw网关到rados集群的网络开销和rados集群读取数据的开销。 P版已经release到16.2.5，但是这个功能没有跟着release，还在开发中。 配置配置起来还是">
 <meta property="og:locale" content="default">
-<meta property="og:updated_time" content="2021-09-14T08:10:40.320Z">
+<meta property="og:updated_time" content="2021-09-14T08:12:05.563Z">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="rgw：数据访问加速（D3N）">
 <meta name="twitter:description" content="介绍D3N全称是Datacenter-Data-Delivery Network (D3N) ，简单理解是在rgw网关节点上把存储在rados集群的数据缓存起来，这种对于rgw网关和rados集群分离部署的场景效果非常好，少了rgw网关到rados集群的网络开销和rados集群读取数据的开销。 P版已经release到16.2.5，但是这个功能没有跟着release，还在开发中。 配置配置起来还是">
@@ -173,7 +173,7 @@
 <p>2、mount /dev/sdd1 /mnt/nvme0/</p>
 <p>3、mkdir -p /mnt/nvme0/rgw_datacache/client.rgw.8000/</p>
 <p>4、修改ceph.conf，在[client.rgw.8000]下增加如下配置 :</p>
-<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">[client.rgw.8000]</span><br><span class="line">rgw_d3n_l1_local_datacache_enabled = true	# 表示开启D3N功能</span><br><span class="line">rgw_d3n_l1_datacache_persistent_path = &quot;/mnt/nvme0/rgw_datacache/client.rgw.8000/&quot;	# 该rgw实例缓存数据的目录 rgw_d3n_l1_datacache_size = 10737418240	# 缓存大小是10G，单位bytes</span><br><span class="line">rgw_d3n_l1_eviction_policy = lru	# 缓存淘汰策略，有两种：random和lru，默认是lru</span><br></pre></td></tr></table></figure>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">[client.rgw.8000]</span><br><span class="line">rgw_d3n_l1_local_datacache_enabled = true	# 表示开启D3N功能</span><br><span class="line">rgw_d3n_l1_datacache_persistent_path = &quot;/mnt/nvme0/rgw_datacache/client.rgw.8000/&quot;	# 该rgw实例缓存数据的目录rgw_d3n_l1_datacache_size = 10737418240	# 缓存大小是10G，单位bytes</span><br><span class="line">rgw_d3n_l1_eviction_policy = lru	# 缓存淘汰策略，有两种：random和lru，默认是lru</span><br></pre></td></tr></table></figure>
 <p>如果网关节点上有多个rgw实例，那么将可以把每个rgw实例的缓存目录分开，例如在[client.rgw.8001]的rgw_d3n_l1_datacache_ persistent_ path =”/mnt/nvme0/rgw_datacache/client.rgw.8001/”。</p>
 <h2 id="日志"><a href="#日志" class="headerlink" title="日志"></a>日志</h2><p>日志也会打在在radosgw.xx.log中，D3N相关的日志行包含了D3N关键字。可以通过debug_rgw_datacache调整日志界别，最高30。</p>
 <h2 id="几个注意点"><a href="#几个注意点" class="headerlink" title="几个注意点"></a>几个注意点</h2><p>1、每次重启rgw网关实例时，都会清除其对应的缓存目录的数据。</p>
